@@ -38,6 +38,8 @@ DONUT_TRACK = "#e8edf4"
 SHAP_POS    = "#ef4444"
 SHAP_NEG    = "#22c55e"
 
+ACCENT_BLUE = "#2563eb"
+
 
 def _risk(p: float) -> tuple[str, str, str]:
     """(label, color, bg_color)"""
@@ -48,10 +50,38 @@ def _risk(p: float) -> tuple[str, str, str]:
     return "Low", RISK_LOW, RISK_LOW_BG
 
 
+def _sofa_style(score) -> tuple[str, str]:
+    """Return (text_color, bg_color) for SOFA score badge."""
+    try:
+        s = int(score)
+    except (TypeError, ValueError):
+        return ("#64748b", "#f1f5f9")
+    if s >= 13:
+        return (RISK_HIGH, RISK_HIGH_BG)
+    if s >= 7:
+        return (RISK_MOD, RISK_MOD_BG)
+    return (RISK_LOW, RISK_LOW_BG)
+
+
 def inject_styles() -> None:
     st.markdown(
         f"""
         <style>
+        /* ── Hide Streamlit default header / toolbar (검은 바 제거) ── */
+        header[data-testid="stHeader"] {{
+            display: none !important;
+            height: 0 !important;
+            visibility: hidden !important;
+        }}
+        div[data-testid="stToolbar"] {{
+            display: none !important;
+        }}
+        div[data-testid="stDecoration"] {{
+            display: none !important;
+        }}
+        #MainMenu {{ visibility: hidden; }}
+        footer {{ visibility: hidden; }}
+
         /* ── Global ── */
         .stApp {{
             background: {APP_BG};
@@ -59,187 +89,256 @@ def inject_styles() -> None:
             color: {T_PRIMARY};
         }}
         .block-container {{
-            max-width: 1600px;
-            padding-top: 0;
-            padding-bottom: 1.5rem;
+            max-width: 1700px;
+            padding-top: 1.4rem;
+            padding-bottom: 1.4rem;
         }}
+        div[data-testid="stVerticalBlock"] {{ gap: 0.6rem; }}
+        div[data-testid="stHorizontalBlock"] {{ gap: 0.7rem; }}
 
-        /* ── Anchor helpers (invisible, used for CSS :has targeting) ── */
-        .patient-panel-anchor,
-        .model-card-anchor {{
+        /* ── Anchor helpers ── */
+        .patient-bar-anchor,
+        .summary-card-anchor,
+        .summary-card-selected-anchor,
+        .detail-panel-anchor {{
             display: none;
         }}
 
-        /* ── Patient panel card ── */
-        div[data-testid="stVerticalBlock"]:has(.patient-panel-anchor) {{
-            background: {CARD_BG};
-            border: 1px solid {CARD_BORDER};
-            border-radius: 16px;
-            box-shadow: {CARD_SHADOW};
-            padding: 1.3rem 1.2rem 1rem;
-        }}
-
-        /* ── Model cards ── */
-        div[data-testid="stVerticalBlock"]:has(.model-card-anchor) {{
-            background: {CARD_BG};
-            border: 1px solid {CARD_BORDER};
-            border-radius: 16px;
-            box-shadow: {CARD_SHADOW};
-            padding: 1.1rem 1.1rem 1rem;
-        }}
-
         /* ── Page header ── */
-        .page-header {{
+        .page-header-row {{
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 1.1rem 0 1.1rem;
-            border-bottom: 1px solid {CARD_BORDER};
-            margin-bottom: 1.1rem;
+            padding: 0.2rem 0 0.6rem;
         }}
         .page-title {{
-            font-size: 1.35rem;
+            font-size: 1.2rem;
             font-weight: 800;
             color: {T_PRIMARY};
             line-height: 1.2;
         }}
         .page-subtitle {{
-            font-size: 0.76rem;
+            font-size: 0.72rem;
             color: {T_MUTED};
-            margin-top: 0.2rem;
+            margin-top: 0.1rem;
         }}
         .page-meta {{
             text-align: right;
-        }}
-        .page-meta-label {{
-            font-size: 0.68rem;
+            font-size: 0.72rem;
             color: {T_MUTED};
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
         }}
         .page-meta-value {{
-            font-size: 0.88rem;
+            font-size: 0.82rem;
             font-weight: 600;
             color: {T_SECONDARY};
-            margin-top: 0.1rem;
         }}
 
-        /* ── Patient panel internals ── */
-        .panel-section-label {{
-            font-size: 0.68rem;
+        /* ── Patient bar (top, single row) ── */
+        .patient-bar {{
+            background: linear-gradient(135deg, #eff6ff 0%, #e0ecfd 100%);
+            border: 1px solid #bfdbfe;
+            border-radius: 12px;
+            padding: 0.75rem 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 1.1rem;
+            flex-wrap: nowrap;
+            margin-bottom: 1.6rem;
+        }}
+        .pb-item {{
+            display: flex;
+            flex-direction: column;
+            gap: 0.05rem;
+            min-width: 0;
+        }}
+        .pb-item-inline {{
+            display: flex;
+            align-items: baseline;
+            gap: 0.4rem;
+        }}
+        .pb-label {{
+            font-size: 0.62rem;
+            color: #1e40af;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }}
+        .pb-value {{
+            font-size: 0.92rem;
+            color: {T_PRIMARY};
+            font-weight: 700;
+            line-height: 1.2;
+            white-space: nowrap;
+        }}
+        .pb-name {{
+            font-size: 1.05rem;
+            font-weight: 800;
+        }}
+        .pb-divider {{
+            width: 1px;
+            height: 28px;
+            background: #bfdbfe;
+            flex-shrink: 0;
+        }}
+        .pb-sofa-badge {{
+            display: inline-block;
+            padding: 0.18rem 0.5rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 800;
+            line-height: 1.1;
+        }}
+
+        /* ── Section heading (above summary cards / detail panel) ── */
+        .section-heading {{
+            font-size: 0.72rem;
             font-weight: 700;
             color: {T_MUTED};
             text-transform: uppercase;
             letter-spacing: 0.07em;
-            margin-bottom: 0.8rem;
+            margin: 0.4rem 0 0.7rem;
         }}
-        .patient-name {{
-            font-size: 1.28rem;
+
+        /* ── Summary cards (4 across) — entire card is clickable ── */
+        div[data-testid="stVerticalBlock"]:has(.summary-card-anchor) {{
+            background: {CARD_BG};
+            border: 1px solid {CARD_BORDER};
+            border-radius: 14px;
+            padding: 0.85rem 0.95rem 0.85rem;
+            box-shadow: 0 1px 2px rgba(15,23,42,.04);
+            opacity: 0.78;
+            transition: opacity 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+            position: relative;
+            cursor: pointer;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.summary-card-anchor):hover {{
+            opacity: 1;
+            box-shadow: 0 2px 6px rgba(15,23,42,.08), 0 8px 20px rgba(15,23,42,.06);
+            transform: translateY(-1px);
+        }}
+        div[data-testid="stVerticalBlock"]:has(.summary-card-selected-anchor) {{
+            background: {CARD_BG};
+            border: 1px solid {ACCENT_BLUE};
+            border-bottom: 4px solid {ACCENT_BLUE};
+            border-radius: 14px;
+            padding: 0.85rem 0.95rem calc(0.85rem - 3px);
+            box-shadow: 0 1px 3px rgba(15,23,42,.07), 0 6px 18px rgba(37,99,235,.13);
+            opacity: 1;
+            position: relative;
+            cursor: pointer;
+        }}
+
+        .sc-name {{
+            font-size: 0.85rem;
             font-weight: 800;
             color: {T_PRIMARY};
-            line-height: 1.2;
-            margin-bottom: 0.2rem;
+            text-align: center;
+            margin-bottom: 0.1rem;
         }}
-        .patient-id {{
-            font-size: 0.75rem;
-            color: {T_MUTED};
-            font-family: "Consolas", monospace;
-            margin-bottom: 0.6rem;
-        }}
-        .demo-grid {{
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+        .sc-meta-row {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
             gap: 0.5rem;
-            margin-bottom: 0.6rem;
-        }}
-        .demo-item {{
-            background: #f8fafc;
-            border: 1px solid #e8edf3;
-            border-radius: 10px;
-            padding: 0.5rem 0.65rem;
-        }}
-        .demo-label {{
-            font-size: 0.65rem;
-            font-weight: 700;
-            color: {T_MUTED};
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            margin-bottom: 0.15rem;
-        }}
-        .demo-value {{
-            font-size: 0.88rem;
-            font-weight: 700;
-            color: {T_PRIMARY};
-        }}
-        .divider {{
-            height: 1px;
-            background: #f1f5f9;
-            margin: 0.8rem 0;
-        }}
-        .badge {{
-            display: inline-block;
-            padding: 0.2rem 0.55rem;
-            border-radius: 999px;
-            font-size: 0.68rem;
-            font-weight: 700;
-            border: 1px solid;
-            margin-right: 0.3rem;
+            margin-top: -0.2rem;
             margin-bottom: 0.3rem;
         }}
-        .data-info-row {{
+        .sc-percent {{
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: {T_PRIMARY};
+        }}
+        .sc-risk-badge {{
+            padding: 0.22rem 0.6rem;
+            border-radius: 8px;
+            font-size: 0.72rem;
+            font-weight: 800;
+        }}
+
+        /* Force element wrappers inside the card to not trap absolute positioning,
+           so the invisible button stretches across the whole stVerticalBlock */
+        div[data-testid="stVerticalBlock"]:has(.summary-card-anchor) [data-testid="stElementContainer"],
+        div[data-testid="stVerticalBlock"]:has(.summary-card-selected-anchor) [data-testid="stElementContainer"] {{
+            position: static;
+        }}
+
+        /* Invisible button overlay — entire card acts as clickable area */
+        div[data-testid="stVerticalBlock"]:has(.summary-card-anchor) div[data-testid="stButton"],
+        div[data-testid="stVerticalBlock"]:has(.summary-card-selected-anchor) div[data-testid="stButton"] {{
+            position: absolute;
+            inset: 0;
+            margin: 0;
+            max-width: none;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.summary-card-anchor) button[kind],
+        div[data-testid="stVerticalBlock"]:has(.summary-card-selected-anchor) button[kind] {{
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            background: transparent;
+            border: none;
+            padding: 0;
+            min-height: 0;
+            cursor: pointer;
+        }}
+        div[data-testid="stVerticalBlock"]:has(.summary-card-anchor) button[kind]:focus,
+        div[data-testid="stVerticalBlock"]:has(.summary-card-selected-anchor) button[kind]:focus {{
+            outline: none;
+            box-shadow: none;
+        }}
+
+        /* ── Detail panel ── */
+        div[data-testid="stVerticalBlock"]:has(.detail-panel-anchor) {{
+            background: {CARD_BG};
+            border: 1px solid {CARD_BORDER};
+            border-radius: 14px;
+            box-shadow: {CARD_SHADOW};
+            padding: 1.4rem 1.6rem 1.3rem;
+            margin-top: 1.6rem;
+        }}
+        .detail-title {{
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-top: 0.5rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.7rem;
+            border-bottom: 1px solid #f1f5f9;
         }}
-        .data-freshness {{
-            font-size: 0.71rem;
-            color: {T_MUTED};
-        }}
-
-        /* ── Model card internals ── */
-        .model-header {{
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            margin-bottom: 0.2rem;
-        }}
-        .model-name {{
+        .detail-title-text {{
             font-size: 0.95rem;
             font-weight: 800;
             color: {T_PRIMARY};
-            line-height: 1.3;
         }}
-        .risk-badge {{
-            padding: 0.22rem 0.6rem;
-            border-radius: 8px;
-            font-size: 0.68rem;
-            font-weight: 800;
-            white-space: nowrap;
+        .detail-title-meta {{
+            font-size: 0.72rem;
+            color: {T_MUTED};
+            font-weight: 600;
         }}
+
         .card-section-label {{
-            font-size: 0.65rem;
+            font-size: 0.7rem;
             font-weight: 700;
             color: {T_MUTED};
             text-transform: uppercase;
             letter-spacing: 0.07em;
-            margin-top: 0.55rem;
-            margin-bottom: 0.35rem;
-            padding-top: 0.55rem;
-            border-top: 1px solid #f1f5f9;
+            margin-bottom: 0.7rem;
+            margin-top: 0.3rem;
         }}
 
         /* ── SHAP bars ── */
         .shap-item {{
             display: flex;
             align-items: center;
-            gap: 0.4rem;
-            margin-bottom: 0.38rem;
+            gap: 0.6rem;
+            margin-bottom: 0.75rem;
         }}
         .shap-name {{
-            font-size: 0.72rem;
+            font-size: 0.78rem;
             color: {T_SECONDARY};
-            width: 50%;
+            width: 38%;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -247,7 +346,7 @@ def inject_styles() -> None:
         }}
         .shap-track {{
             flex: 1;
-            height: 7px;
+            height: 9px;
             background: #f1f5f9;
             border-radius: 4px;
             overflow: hidden;
@@ -257,37 +356,37 @@ def inject_styles() -> None:
             border-radius: 4px;
         }}
         .shap-badge {{
-            font-size: 0.69rem;
+            font-size: 0.74rem;
             font-weight: 700;
-            min-width: 46px;
+            min-width: 54px;
             text-align: right;
             flex-shrink: 0;
         }}
 
-        /* ── Feature measurement table ── */
+        /* ── Feature table ── */
         .feat-table {{
             width: 100%;
             border-collapse: collapse;
-            font-size: 0.72rem;
+            font-size: 0.78rem;
         }}
         .feat-table th {{
-            font-size: 0.64rem;
+            font-size: 0.66rem;
             color: {T_MUTED};
             font-weight: 700;
-            padding: 0.15rem 0.2rem;
+            padding: 0.2rem 0.3rem;
             border-bottom: 1px solid #e8edf3;
             text-align: left;
             text-transform: uppercase;
             letter-spacing: 0.04em;
         }}
         .feat-table td {{
-            padding: 0.28rem 0.2rem;
+            padding: 0.5rem 0.3rem;
             border-bottom: 1px solid #f8fafc;
             vertical-align: middle;
         }}
         .fn-cell {{ color: {T_SECONDARY}; }}
         .fv-cell {{ font-weight: 700; }}
-        .fr-cell {{ color: {T_MUTED}; font-size: 0.67rem; }}
+        .fr-cell {{ color: {T_MUTED}; font-size: 0.7rem; }}
         .anom-hi {{ color: #dc2626; }}
         .anom-lo {{ color: #2563eb; }}
         .val-ok  {{ color: #16a34a; }}
@@ -295,42 +394,39 @@ def inject_styles() -> None:
         /* ── Description box ── */
         .desc-box {{
             background: #f8fafc;
-            border-left: 3px solid #e2e8f0;
+            border-left: 3px solid {ACCENT_BLUE};
             border-radius: 0 8px 8px 0;
-            padding: 0.55rem 0.7rem;
+            padding: 0.85rem 1rem;
+            margin-top: 0.3rem;
         }}
         .desc-text {{
-            font-size: 0.76rem;
+            font-size: 0.78rem;
             color: {T_SECONDARY};
             line-height: 1.6;
         }}
 
-        /* ── Section title (model results area) ── */
-        .section-heading {{
-            font-size: 0.75rem;
-            font-weight: 700;
-            color: {T_MUTED};
-            text-transform: uppercase;
-            letter-spacing: 0.07em;
-            margin-bottom: 0.8rem;
-        }}
-
         /* ── Streamlit overrides ── */
-        div[data-testid="stCheckbox"] {{ margin-top: 0.6rem; }}
-        div[data-testid="stCheckbox"] label {{ font-size: 0.78rem; color: {T_SECONDARY}; }}
+        div[data-testid="stCheckbox"] label {{
+            font-size: 0.75rem;
+            color: {T_SECONDARY};
+        }}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def build_donut(probability: float) -> go.Figure:
-    label, color, _ = _risk(probability)
+# ─────────────────────────────────────────────────────────────
+# Chart / HTML builders
+# ─────────────────────────────────────────────────────────────
+def build_summary_donut(probability: float) -> go.Figure:
+    """Compact donut for summary cards."""
+    _, color, _ = _risk(probability)
     v = max(0.0, min(probability, 1.0))
 
     fig = go.Figure(data=[go.Pie(
         values=[v, 1 - v],
-        hole=0.70,
+        hole=0.74,
         sort=False,
         direction="clockwise",
         marker=dict(colors=[color, DONUT_TRACK]),
@@ -339,22 +435,16 @@ def build_donut(probability: float) -> go.Figure:
         showlegend=False,
     )])
     fig.update_layout(
-        height=165,
+        height=140,
         margin=dict(l=4, r=4, t=4, b=4),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         annotations=[
             dict(
                 text=f"<b>{v * 100:.1f}%</b>",
-                x=0.5, y=0.57,
+                x=0.5, y=0.5,
                 showarrow=False,
-                font=dict(size=22, color=T_PRIMARY),
-            ),
-            dict(
-                text=label,
-                x=0.5, y=0.40,
-                showarrow=False,
-                font=dict(size=11, color=T_SECONDARY),
+                font=dict(size=20, color=T_PRIMARY),
             ),
         ],
     )
@@ -399,7 +489,6 @@ def _feature_table_html(top_feature_values: list) -> str:
         if raw is None:
             continue
 
-        # Format numeric value
         if isinstance(raw, float) and raw == int(raw):
             val_str = str(int(raw))
         elif isinstance(raw, float):
@@ -439,30 +528,83 @@ def _feature_table_html(top_feature_values: list) -> str:
     )
 
 
+# ─────────────────────────────────────────────────────────────
+# Section renderers
+# ─────────────────────────────────────────────────────────────
 def render_page_header(data: dict) -> None:
     meta = data.get("meta", {})
-    updated = meta.get("last_updated_display", "-")
+    updated = html.escape(meta.get("last_updated_display", "-"))
     source_label = html.escape(meta.get("source_label", "-"))
     is_mock = meta.get("source") == "mock"
-    src_color = "#94a3b8" if is_mock else "#2563eb"
-    src_bg    = "#f8fafc"  if is_mock else "#eff6ff"
-    src_border = "#e2e8f0" if is_mock else "#bfdbfe"
+    src_color = "#94a3b8" if is_mock else ACCENT_BLUE
+
+    h_left, h_right = st.columns([3, 2], gap="small")
+    with h_left:
+        st.markdown(
+            '<div class="page-header-row">'
+            '<div>'
+            '<div class="page-title">ICU ClinSight Dashboard</div>'
+            '<div class="page-subtitle">패혈증 환자 예후 예측 · 중환자실 임상 의사결정 지원 시스템</div>'
+            '</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    with h_right:
+        st.markdown(
+            f'<div class="page-meta" style="padding-top:0.3rem;">'
+            f'<span style="color:{src_color};font-weight:700;">● {source_label}</span>'
+            f' &nbsp;·&nbsp; '
+            f'마지막 업데이트 <span class="page-meta-value">{updated}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+
+def render_patient_bar(data: dict) -> None:
+    p = data.get("patient", {})
+
+    name = html.escape(str(p.get("name", "-")))
+    age = p.get("age", "-")
+    age_str = f"{age}세" if age != "-" else "-"
+    gender_map = {"Male": "남성", "Female": "여성"}
+    gender = html.escape(gender_map.get(str(p.get("gender", "")), str(p.get("gender", "-"))))
+    icu_admit = html.escape(str(p.get("icu_admit_time", "-")))
+    sepsis_onset = html.escape(str(p.get("sepsis_onset", "-")))
+    sofa = p.get("sofa_score", "-")
+    sofa_color, sofa_bg = _sofa_style(sofa)
+    sofa_str = html.escape(str(sofa))
 
     st.markdown(
         f"""
-        <div class="page-header">
-          <div>
-            <div class="page-title">ICU ClinSight Dashboard</div>
-            <div class="page-subtitle">패혈증 환자 예후 예측 · 중환자실 임상 의사결정 지원 시스템</div>
+        <div class="patient-bar">
+          <div class="pb-item">
+            <span class="pb-label">환자</span>
+            <span class="pb-value pb-name">{name}</span>
           </div>
-          <div class="page-meta">
-            <div style="margin-bottom:0.3rem;">
-              <span class="badge" style="color:{src_color};border-color:{src_border};background:{src_bg};">
-                {source_label}
-              </span>
-            </div>
-            <div class="page-meta-label">마지막 업데이트</div>
-            <div class="page-meta-value">{html.escape(updated)}</div>
+          <div class="pb-divider"></div>
+          <div class="pb-item">
+            <span class="pb-label">나이</span>
+            <span class="pb-value">{html.escape(age_str)}</span>
+          </div>
+          <div class="pb-divider"></div>
+          <div class="pb-item">
+            <span class="pb-label">성별</span>
+            <span class="pb-value">{gender}</span>
+          </div>
+          <div class="pb-divider"></div>
+          <div class="pb-item">
+            <span class="pb-label">ICU 입실</span>
+            <span class="pb-value">{icu_admit}</span>
+          </div>
+          <div class="pb-divider"></div>
+          <div class="pb-item">
+            <span class="pb-label">SOFA 점수</span>
+            <span class="pb-sofa-badge" style="color:{sofa_color};background:{sofa_bg};">{sofa_str}</span>
+          </div>
+          <div class="pb-divider"></div>
+          <div class="pb-item">
+            <span class="pb-label">패혈증 onset</span>
+            <span class="pb-value">{sepsis_onset}</span>
           </div>
         </div>
         """,
@@ -470,122 +612,115 @@ def render_page_header(data: dict) -> None:
     )
 
 
-def render_patient_panel(data: dict, use_mock_data: bool) -> None:
-    patient = data.get("patient", {})
-
-    age = patient.get("age", "-")
-    age_str = f"{age}세" if age != "-" else "-"
-    gender_map = {"Male": "남성", "Female": "여성"}
-    gender = gender_map.get(str(patient.get("gender", "")), patient.get("gender", "-"))
-    diagnosis = html.escape(str(patient.get("diagnosis", "-")))
-    ward = html.escape(str(patient.get("ward", "-")))
-    admit_date = html.escape(str(patient.get("admit_date", "-")))
-
-    with st.container():
-        st.markdown('<div class="patient-panel-anchor"></div>', unsafe_allow_html=True)
-
-        # Section label + ICU status badge
-        st.markdown(
-            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.9rem;">'
-            '<div class="panel-section-label">환자 정보</div>'
-            '<span class="badge" style="color:#2563eb;border-color:#bfdbfe;background:#eff6ff;">ICU 입원 중</span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-
-        # Name + ID + diagnosis badge
-        st.markdown(
-            f'<div class="patient-name">{html.escape(str(patient.get("name", "-")))}</div>'
-            f'<div class="patient-id">{html.escape(str(patient.get("patient_id", "-")))}</div>'
-            f'<div style="margin-bottom:0.75rem;">'
-            f'<span class="badge" style="color:#7c3aed;border-color:#ddd6fe;background:#f5f3ff;">'
-            f'{diagnosis}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        # Demographics 2×2 grid
-        st.markdown(
-            f'<div class="demo-grid">'
-            f'<div class="demo-item"><div class="demo-label">나이</div>'
-            f'<div class="demo-value">{html.escape(age_str)}</div></div>'
-            f'<div class="demo-item"><div class="demo-label">성별</div>'
-            f'<div class="demo-value">{html.escape(str(gender))}</div></div>'
-            f'<div class="demo-item"><div class="demo-label">병동</div>'
-            f'<div class="demo-value">{ward}</div></div>'
-            f'<div class="demo-item"><div class="demo-label">입원일</div>'
-            f'<div class="demo-value">{admit_date}</div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
-        # Data source section
-        st.markdown('<div class="panel-section-label">데이터 현황</div>', unsafe_allow_html=True)
-        st.checkbox("Mock 데이터 사용", value=use_mock_data, key="use_mock_data")
+def _select_model(model_name: str) -> None:
+    st.session_state["selected_model"] = model_name
 
 
-def render_model_card(model_name: str, model_result: dict) -> None:
+def render_summary_cards(data: dict) -> None:
+    selected = st.session_state.get("selected_model", MODEL_ORDER[0])
+    cols = st.columns(4, gap="small")
+
+    for i, model_name in enumerate(MODEL_ORDER):
+        model_result = data.get("models", {}).get(model_name, {})
+        prob = float(model_result.get("probability", 0.0))
+        label, color, bg_color = _risk(prob)
+        kr_name = MODEL_KR_NAME.get(model_name, model_name)
+        is_selected = (selected == model_name)
+
+        with cols[i]:
+            anchor = "summary-card-selected-anchor" if is_selected else "summary-card-anchor"
+            st.markdown(f'<div class="{anchor}"></div>', unsafe_allow_html=True)
+
+            st.markdown(
+                f'<div class="sc-name">{html.escape(kr_name)}</div>',
+                unsafe_allow_html=True,
+            )
+
+            st.plotly_chart(
+                build_summary_donut(prob),
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"summary_donut_{model_name}",
+            )
+
+            st.markdown(
+                f'<div class="sc-meta-row">'
+                f'<span class="sc-risk-badge" style="color:{color};background:{bg_color};">{label}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+            # Invisible button overlay covering the entire card via CSS
+            st.button(
+                kr_name,
+                key=f"sel_{model_name}",
+                on_click=_select_model,
+                args=(model_name,),
+                use_container_width=True,
+            )
+
+
+def render_detail_panel(data: dict) -> None:
+    selected = st.session_state.get("selected_model", MODEL_ORDER[0])
+    model_result = data.get("models", {}).get(selected, {})
+    kr_name = MODEL_KR_NAME.get(selected, selected)
     prob = float(model_result.get("probability", 0.0))
     label, color, bg_color = _risk(prob)
-    kr_name = MODEL_KR_NAME.get(model_name, model_name)
 
     with st.container():
-        st.markdown('<div class="model-card-anchor"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="detail-panel-anchor"></div>', unsafe_allow_html=True)
 
-        # ── Header: name + risk badge ──────────────────────────
         st.markdown(
-            f'<div class="model-header">'
-            f'<div class="model-name">{html.escape(kr_name)}</div>'
-            f'<div class="risk-badge" style="color:{color};background:{bg_color};">{label}</div>'
+            f'<div class="detail-title">'
+            f'<div class="detail-title-text">{html.escape(kr_name)} · 상세 분석</div>'
+            f'<div>'
+            f'<span class="sc-risk-badge" style="color:{color};background:{bg_color};">{label} · {prob*100:.1f}%</span>'
+            f'</div>'
             f'</div>',
             unsafe_allow_html=True,
         )
 
-        # ── Donut chart ────────────────────────────────────────
-        st.plotly_chart(
-            build_donut(prob),
-            use_container_width=True,
-            config={"displayModeBar": False},
-            key=f"donut_{model_name}",
-        )
+        left, right = st.columns(2, gap="large")
 
-        # ── SHAP: 주요 기여 요인 ──────────────────────────────
-        st.markdown(
-            '<div class="card-section-label">주요 기여 요인 (SHAP)</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            _shap_bars_html(model_result.get("shap_values", [])),
-            unsafe_allow_html=True,
-        )
+        with left:
+            st.markdown(
+                '<div class="card-section-label">주요 기여 요인 (SHAP)</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                _shap_bars_html(model_result.get("shap_values", [])),
+                unsafe_allow_html=True,
+            )
 
-        # ── Feature measurements: 핵심 지표 측정값 ────────────
-        st.markdown(
-            '<div class="card-section-label">핵심 지표 측정값</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            _feature_table_html(model_result.get("top_feature_values", [])),
-            unsafe_allow_html=True,
-        )
+        with right:
+            st.markdown(
+                '<div class="card-section-label">핵심 지표 측정값</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                _feature_table_html(model_result.get("top_feature_values", [])),
+                unsafe_allow_html=True,
+            )
 
-        # ── Clinical interpretation ────────────────────────────
-        st.markdown(
-            '<div class="card-section-label">임상 해석</div>',
-            unsafe_allow_html=True,
-        )
-        desc = html.escape(str(model_result.get("description", "-")))
-        st.markdown(
-            f'<div class="desc-box"><div class="desc-text">{desc}</div></div>',
-            unsafe_allow_html=True,
-        )
+            st.markdown(
+                '<div class="card-section-label" style="margin-top:1.3rem;">임상 해석</div>',
+                unsafe_allow_html=True,
+            )
+            desc = html.escape(str(model_result.get("description", "-")))
+            st.markdown(
+                f'<div class="desc-box"><div class="desc-text">{desc}</div></div>',
+                unsafe_allow_html=True,
+            )
 
 
+# ─────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────
 def main() -> None:
     inject_styles()
 
+    if "selected_model" not in st.session_state:
+        st.session_state["selected_model"] = MODEL_ORDER[0]
     if "use_mock_data" not in st.session_state:
         st.session_state["use_mock_data"] = True
 
@@ -595,30 +730,14 @@ def main() -> None:
     )
 
     render_page_header(dashboard_data)
+    render_patient_bar(dashboard_data)
 
-    left_col, right_col = st.columns([1, 3], gap="large")
-
-    with left_col:
-        render_patient_panel(
-            dashboard_data,
-            use_mock_data=bool(st.session_state["use_mock_data"]),
-        )
-
-    with right_col:
-        st.markdown(
-            '<div class="section-heading">모델 예측 결과</div>',
-            unsafe_allow_html=True,
-        )
-        row1 = st.columns(2, gap="medium")
-        row2 = st.columns(2, gap="medium")
-        grid = [row1, row2]
-
-        for idx, model_name in enumerate(MODEL_ORDER):
-            with grid[idx // 2][idx % 2]:
-                render_model_card(
-                    model_name,
-                    dashboard_data.get("models", {}).get(model_name, {}),
-                )
+    st.markdown(
+        '<div class="section-heading">모델 위험도 요약</div>',
+        unsafe_allow_html=True,
+    )
+    render_summary_cards(dashboard_data)
+    render_detail_panel(dashboard_data)
 
 
 if __name__ == "__main__":

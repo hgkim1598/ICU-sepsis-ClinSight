@@ -10,7 +10,7 @@ import requests
 API_BASE_URL = os.getenv("DASHBOARD_API_BASE_URL", "http://localhost:8000")
 PREDICTION_ENDPOINT = "/predictions/latest"
 REQUEST_TIMEOUT_SECONDS = 5
-MODEL_ORDER = ["Mortality", "AKI", "ARDS", "SIC"]
+MODEL_ORDER = ["Mortality", "ARDS", "AKI", "SIC"]
 
 FEATURE_DISPLAY_MAP = {
     "age": "나이",
@@ -83,9 +83,9 @@ FEATURE_NORMAL_RANGE_STR: Dict[str, str] = {
 
 MODEL_KR_NAME = {
     "Mortality": "사망 위험도",
-    "AKI": "급성신손상 (AKI)",
     "ARDS": "급성호흡곤란 (ARDS)",
-    "SIC": "파종혈관내응고 (SIC)",
+    "AKI": "급성신손상 (AKI)",
+    "SIC": "파종혈관내응고 (DIC)",
 }
 
 MOCK_DASHBOARD_DATA: Dict[str, Any] = {
@@ -97,6 +97,9 @@ MOCK_DASHBOARD_DATA: Dict[str, Any] = {
         "admit_date": "2026-04-08",
         "diagnosis": "Septic Shock",
         "ward": "ICU-3",
+        "icu_admit_time": "2026-04-08 14:30",
+        "sofa_score": 12,
+        "sepsis_onset": "2026-04-09 03:15",
     },
     "meta": {
         "last_updated": "2026-04-10T18:20:00",
