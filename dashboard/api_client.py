@@ -2,33 +2,23 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from feature_labels import FEATURE_LABELS, get_feature_label
+
 
 API_BASE_URL = os.getenv("DASHBOARD_API_BASE_URL", "http://localhost:8000")
+# 단일 모델 예측 endpoint (API 연동 시 이 경로로 호출)
+MODEL_PREDICT_ENDPOINT = "/api/v1/predict/{patient_id}/{model_name}"
+# (구) 대시보드 일괄 endpoint — 남아있으면 호환용으로 우선 사용
 PREDICTION_ENDPOINT = "/predictions/latest"
 REQUEST_TIMEOUT_SECONDS = 5
 MODEL_ORDER = ["Mortality", "ARDS", "AKI", "SIC"]
 
-FEATURE_DISPLAY_MAP = {
-    "age": "나이",
-    "bun_last": "BUN 최근값",
-    "creatinine_last": "크레아티닌 최근값",
-    "lactate_last": "Lactate 최근값",
-    "lactate_max": "Lactate 최고값",
-    "mbp_last": "평균동맥압 최근값",
-    "mbp_slope": "평균동맥압 변화율",
-    "map_last": "평균동맥압 최근값",
-    "pao2fio2_min": "P/F ratio 최저값",
-    "platelet_last": "혈소판 최근값",
-    "pt_inr_last": "PT-INR",
-    "resp_rate_last": "호흡수 최근값",
-    "bilirubin_last": "빌리루빈 최근값",
-    "uo_6h": "6시간 소변량",
-    "uo_24h": "24시간 소변량",
-}
+# feature 라벨은 feature_labels.py로 분리. 구 이름은 하위 호환 alias로만 유지.
+FEATURE_DISPLAY_MAP = FEATURE_LABELS
 
 FEATURE_UNITS: Dict[str, str] = {
     "age": "세",
@@ -172,19 +162,24 @@ def format_last_updated(value: str | None) -> str:
 
 
 def get_feature_display_name(feature_name: str) -> str:
-    return FEATURE_DISPLAY_MAP.get(feature_name, feature_name.replace("_", " "))
+    """매핑에 없으면 feature 이름 그대로 반환(fallback)."""
+    return get_feature_label(feature_name)
 
 
 def normalize_shap_values(model_result: Dict[str, Any]) -> list[dict]:
-    shap_values = model_result.get("shap_values")
-    if isinstance(shap_values, dict):
+    # API 스펙 상 shap 키가 표준. 구 mock은 shap_values 키를 사용하므로 둘 다 허용.
+    shap_raw = model_result.get("shap")
+    if shap_raw is None:
+        shap_raw = model_result.get("shap_values")
+
+    if isinstance(shap_raw, dict):
         normalized = [
             {"feature": key, "value": value}
-            for key, value in shap_values.items()
+            for key, value in shap_raw.items()
         ]
-    elif isinstance(shap_values, list):
+    elif isinstance(shap_raw, list):
         normalized = []
-        for item in shap_values:
+        for item in shap_raw:
             if isinstance(item, dict):
                 feature_name = item.get("feature") or item.get("name") or item.get("feature_name")
                 feature_value = item.get("value")
@@ -196,7 +191,8 @@ def normalize_shap_values(model_result: Dict[str, Any]) -> list[dict]:
         fallback_top_features = model_result.get("top_features", [])
         normalized = [{"feature": feature, "value": 0.0} for feature in fallback_top_features]
 
-    normalized.sort(key=lambda item: abs(float(item.get("value", 0.0))), reverse=True)
+    # API 스펙: 프론트에서 value 내림차순 정렬 후 상위 3개 slice (shap은 60+개도 가능)
+    normalized.sort(key=lambda item: float(item.get("value", 0.0)), reverse=True)
     return normalized
 
 
@@ -266,12 +262,57 @@ def enrich_model_result(
     }
 
 
-def enrich_dashboard_data(data: Dict[str, Any], source: str) -> Dict[str, Any]:
-    meta = data.get("meta", {})
-    feature_values = data.get("feature_values", {})
+def get_model_result(patient_id: str, model_name: str) -> Dict[str, Any]:
+    """
+    단일 모델의 예측 결과를 API 스펙 형태로 반환.
 
-    enriched = {
-        "patient": data.get("patient", {}),
+    반환 형식:
+        {
+            "probability": float,                           # 0.0 ~ 1.0
+            "shap": [{"feature": str, "value": float}, ...] # 원본 순서, 정렬 없음
+        }
+
+    # TODO: API 연동 시 이 함수 내부를 실제 API 호출로 교체
+    # API endpoint: /api/v1/predict/{patient_id}/{model_name}
+    # 현재: mock 데이터 반환
+    #
+    # 교체 예시:
+    #   url = f"{API_BASE_URL.rstrip('/')}" + MODEL_PREDICT_ENDPOINT.format(
+    #       patient_id=patient_id, model_name=model_name.lower()
+    #   )
+    #   response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+    #   response.raise_for_status()
+    #   return response.json()  # {"probability": ..., "shap": [...]}
+    """
+    model_data = MOCK_DASHBOARD_DATA.get("models", {}).get(model_name, {})
+    shap_raw = model_data.get("shap_values", [])
+
+    shap_list: List[Dict[str, Any]] = []
+    if isinstance(shap_raw, list):
+        for item in shap_raw:
+            if isinstance(item, dict):
+                feature = item.get("feature") or item.get("name")
+                value = item.get("value")
+                if feature is not None and value is not None:
+                    shap_list.append({"feature": str(feature), "value": float(value)})
+    elif isinstance(shap_raw, dict):
+        for key, value in shap_raw.items():
+            shap_list.append({"feature": str(key), "value": float(value)})
+
+    return {
+        "probability": float(model_data.get("probability", 0.0)),
+        "shap": shap_list,
+    }
+
+
+def _build_dashboard_envelope(
+    models_enriched: Dict[str, Any],
+    source: str,
+) -> Dict[str, Any]:
+    """환자/meta는 여전히 mock에서 가져옴 (API 연동 범위 밖)."""
+    meta = MOCK_DASHBOARD_DATA.get("meta", {})
+    return {
+        "patient": MOCK_DASHBOARD_DATA.get("patient", {}),
         "meta": {
             "source": source,
             "source_label": "API 연결" if source == "api" else "Mock data",
@@ -279,36 +320,46 @@ def enrich_dashboard_data(data: Dict[str, Any], source: str) -> Dict[str, Any]:
             "last_updated_display": format_last_updated(meta.get("last_updated")),
             "api_base_url": API_BASE_URL,
         },
-        "models": {},
+        "models": models_enriched,
     }
-
-    for model_name in MODEL_ORDER:
-        raw_model = data.get("models", {}).get(model_name, {})
-        enriched["models"][model_name] = enrich_model_result(
-            model_name, raw_model, feature_values
-        )
-
-    return enriched
-
-
-def get_mock_dashboard_data() -> Dict[str, Any]:
-    return enrich_dashboard_data(MOCK_DASHBOARD_DATA, source="mock")
 
 
 def fetch_dashboard_data(
     use_mock_override: bool = False,
     use_mock_on_error: bool = True,
+    patient_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    if use_mock_override:
-        return get_mock_dashboard_data()
+    """
+    대시보드 전체 데이터(환자 + 4개 모델 예측)를 반환.
 
-    url = f"{API_BASE_URL.rstrip('/')}{PREDICTION_ENDPOINT}"
+    per-model 단위로 `get_model_result(patient_id, model_name)`을 호출해 조립.
+    모델 단위 API 교체는 `get_model_result`만 수정하면 됨.
+    """
+    pid = patient_id or str(
+        MOCK_DASHBOARD_DATA.get("patient", {}).get("patient_id", "")
+    )
+    feature_values = MOCK_DASHBOARD_DATA.get("feature_values", {})
 
-    try:
-        response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
-        response.raise_for_status()
-        return enrich_dashboard_data(response.json(), source="api")
-    except requests.RequestException:
-        if use_mock_on_error:
-            return get_mock_dashboard_data()
-        raise
+    models_enriched: Dict[str, Any] = {}
+    for model_name in MODEL_ORDER:
+        try:
+            raw = get_model_result(pid, model_name)
+        except requests.RequestException:
+            if not use_mock_on_error:
+                raise
+            # 실패 시 mock fallback
+            raw = {
+                "probability": float(
+                    MOCK_DASHBOARD_DATA["models"].get(model_name, {}).get("probability", 0.0)
+                ),
+                "shap": [],
+            }
+        models_enriched[model_name] = enrich_model_result(
+            model_name, raw, feature_values
+        )
+
+    source = "mock" if use_mock_override else "api"
+    # 현재는 get_model_result가 항상 mock을 반환하므로 source도 mock으로 표기
+    if not use_mock_override:
+        source = "mock"
+    return _build_dashboard_envelope(models_enriched, source=source)

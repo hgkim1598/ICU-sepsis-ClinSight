@@ -373,13 +373,6 @@ def inject_styles() -> None:
             height: 100%;
             border-radius: 4px;
         }}
-        .shap-badge {{
-            font-size: 0.74rem;
-            font-weight: 700;
-            min-width: 54px;
-            text-align: right;
-            flex-shrink: 0;
-        }}
 
         /* ── Feature table ── */
         .feat-table {{
@@ -964,7 +957,6 @@ def _shap_bars_html(shap_values: list) -> str:
         name = get_feature_display_name(feat)
         pct = int(abs(val) / max_abs * 100)
         color = SHAP_POS if val >= 0 else SHAP_NEG
-        arrow = "▲" if val >= 0 else "▼"
 
         rows += (
             f'<div class="shap-item">'
@@ -972,7 +964,6 @@ def _shap_bars_html(shap_values: list) -> str:
             f'<div class="shap-track">'
             f'<div class="shap-fill" style="width:{pct}%;background:{color};"></div>'
             f'</div>'
-            f'<div class="shap-badge" style="color:{color};">{arrow}&nbsp;{abs(val):.2f}</div>'
             f'</div>'
         )
     return rows
