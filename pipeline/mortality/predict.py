@@ -13,10 +13,11 @@ from scipy import stats
 from datetime import datetime
 
 # ── 설정 ─────────────────────────────────────────────────────
-S3_BUCKET    = os.getenv('S3_BUCKET', 'say2-1team')
-MODEL_PREFIX = os.getenv('MODEL_PREFIX', 'Final_model/saved_models')
-USE_S3       = os.getenv('USE_S3', 'true').lower() == 'true'
+S3_BUCKET        = os.getenv('S3_BUCKET', 'say2-1team')
+MODEL_PREFIX     = os.getenv('MODEL_PREFIX', 'Final_model/saved_models')
+USE_S3           = os.getenv('USE_S3', 'true').lower() == 'true'
 LOCAL_MODEL_PATH = os.getenv('LOCAL_MODEL_PATH', './models')
+THRESHOLD        = 0.21
 
 TS_COLS   = ['heart_rate','mbp','sbp','dbp','resp_rate','spo2','temperature','gcs','pao2fio2ratio']
 MASK_COLS = [f'{c}_mask' for c in TS_COLS]
@@ -68,25 +69,25 @@ def _load_models():
     if USE_S3:
         s3 = boto3.client('s3')
 
-        # BiLSTM
+        # BiLSTM (기존 모델)
         obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/bilstm_best.pt')
         state = torch.load(BytesIO(obj['Body'].read()), map_location=device)
 
-        # XGBoost
+        # XGBoost (기존 모델)
         obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/xgb_stacking.json')
         with open('/tmp/xgb_stacking.json', 'wb') as f:
             f.write(obj['Body'].read())
 
-        # Stacking LR
-        obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/stacking_lr.pkl')
-        with open('/tmp/stacking_lr.pkl', 'wb') as f:
+        # Stacking LR (OOF 버전)
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/OOF/stacking_lr_oof.pkl')
+        with open('/tmp/stacking_lr_oof.pkl', 'wb') as f:
             f.write(obj['Body'].read())
 
     else:
         state = torch.load(f'{LOCAL_MODEL_PATH}/bilstm_best.pt', map_location=device)
         import shutil
-        shutil.copy(f'{LOCAL_MODEL_PATH}/xgb_stacking.json', '/tmp/xgb_stacking.json')
-        shutil.copy(f'{LOCAL_MODEL_PATH}/stacking_lr.pkl',   '/tmp/stacking_lr.pkl')
+        shutil.copy(f'{LOCAL_MODEL_PATH}/xgb_stacking.json',   '/tmp/xgb_stacking.json')
+        shutil.copy(f'{LOCAL_MODEL_PATH}/OOF/stacking_lr_oof.pkl', '/tmp/stacking_lr_oof.pkl')
 
     bilstm = BiLSTM().to(device)
     bilstm.load_state_dict(state)
@@ -95,11 +96,11 @@ def _load_models():
     clf_xgb = xgb.XGBClassifier()
     clf_xgb.load_model('/tmp/xgb_stacking.json')
 
-    lr = joblib.load('/tmp/stacking_lr.pkl')
+    lr = joblib.load('/tmp/stacking_lr_oof.pkl')
 
     return bilstm, clf_xgb, lr
 
-# 모델 전역 캐싱 (최초 1회만 로드)
+# 모델 전역 캐싱
 _bilstm, _clf_xgb, _lr = None, None, None
 
 def _get_models():
@@ -138,7 +139,7 @@ def _preprocess_timeseries(vital_ts, patient_meta):
     vital = vital_ts.copy()
     vital['slot'] = pd.to_datetime(vital['charttime']).dt.floor('h')
     agg = vital.groupby('slot')[TS_COLS].mean().reset_index()
-    ts = ts.merge(agg, on='slot', how='left')
+    ts  = ts.merge(agg, on='slot', how='left')
 
     for col in ['heart_rate','mbp','sbp','dbp','resp_rate','spo2']:
         ts[col] = ts[col].ffill(limit=1)
@@ -213,20 +214,20 @@ def _preprocess_static(vital_ts, lab_df, patient_meta):
     feats['pao2fio2_last']          = _calc_last(v['pao2fio2ratio'])
     feats['pao2fio2_min']           = v['pao2fio2ratio'].min()
     feats['pao2fio2_slope']         = _calc_slope(v['pao2fio2ratio'])
-    feats['albumin_min']            = l['albumin'].min() if 'albumin' in l.columns else np.nan
-    feats['albumin_missing_flag']   = _calc_missing_flag(l['albumin']) if 'albumin' in l.columns else 1
-    feats['wbc_last']               = _calc_last(l['wbc']) if 'wbc' in l.columns else np.nan
-    feats['wbc_min']                = l['wbc'].min() if 'wbc' in l.columns else np.nan
-    feats['wbc_max']                = l['wbc'].max() if 'wbc' in l.columns else np.nan
-    feats['wbc_slope']              = _calc_slope(l['wbc']) if 'wbc' in l.columns else np.nan
-    feats['platelet_last']          = _calc_last(l['platelet']) if 'platelet' in l.columns else np.nan
-    feats['platelet_min']           = l['platelet'].min() if 'platelet' in l.columns else np.nan
-    feats['platelet_slope']         = _calc_slope(l['platelet']) if 'platelet' in l.columns else np.nan
-    feats['hemoglobin_last']        = _calc_last(l['hemoglobin']) if 'hemoglobin' in l.columns else np.nan
-    feats['hemoglobin_min']         = l['hemoglobin'].min() if 'hemoglobin' in l.columns else np.nan
-    feats['hemoglobin_diff']        = _calc_diff(l['hemoglobin']) if 'hemoglobin' in l.columns else np.nan
-    feats['bilirubin_min']          = l['bilirubin_total'].min() if 'bilirubin_total' in l.columns else np.nan
-    feats['bilirubin_max']          = l['bilirubin_total'].max() if 'bilirubin_total' in l.columns else np.nan
+    feats['albumin_min']            = l['albumin'].min()           if 'albumin'       in l.columns else np.nan
+    feats['albumin_missing_flag']   = _calc_missing_flag(l['albumin']) if 'albumin'   in l.columns else 1
+    feats['wbc_last']               = _calc_last(l['wbc'])         if 'wbc'           in l.columns else np.nan
+    feats['wbc_min']                = l['wbc'].min()               if 'wbc'           in l.columns else np.nan
+    feats['wbc_max']                = l['wbc'].max()               if 'wbc'           in l.columns else np.nan
+    feats['wbc_slope']              = _calc_slope(l['wbc'])        if 'wbc'           in l.columns else np.nan
+    feats['platelet_last']          = _calc_last(l['platelet'])    if 'platelet'      in l.columns else np.nan
+    feats['platelet_min']           = l['platelet'].min()          if 'platelet'      in l.columns else np.nan
+    feats['platelet_slope']         = _calc_slope(l['platelet'])   if 'platelet'      in l.columns else np.nan
+    feats['hemoglobin_last']        = _calc_last(l['hemoglobin'])  if 'hemoglobin'    in l.columns else np.nan
+    feats['hemoglobin_min']         = l['hemoglobin'].min()        if 'hemoglobin'    in l.columns else np.nan
+    feats['hemoglobin_diff']        = _calc_diff(l['hemoglobin'])  if 'hemoglobin'    in l.columns else np.nan
+    feats['bilirubin_min']          = l['bilirubin_total'].min()   if 'bilirubin_total' in l.columns else np.nan
+    feats['bilirubin_max']          = l['bilirubin_total'].max()   if 'bilirubin_total' in l.columns else np.nan
     feats['bilirubin_missing_flag'] = _calc_missing_flag(l['bilirubin_total']) if 'bilirubin_total' in l.columns else 1
     feats['age']                    = patient_meta['age']
     feats['gender']                 = patient_meta['gender']
@@ -256,7 +257,7 @@ def predict_mortality(vital_ts, lab_df, patient_meta):
 
     Returns
     -------
-    dict : { mortality: { probability, shap: [{feature, value}] } }
+    dict : { mortality: { probability, prediction, threshold, shap } }
     """
     bilstm, clf_xgb, lr = _get_models()
 
@@ -280,6 +281,71 @@ def predict_mortality(vital_ts, lab_df, patient_meta):
     return {
         'mortality': {
             'probability': round(float(prob_final), 4),
-            'shap': shap_list
+            'prediction':  int(prob_final >= THRESHOLD),
+            'threshold':   THRESHOLD,
+            'shap':        shap_list
         }
     }
+
+
+# ── 테스트 실행 ───────────────────────────────────────────────
+if __name__ == '__main__':
+    import json
+    from datetime import datetime, timedelta
+
+    intime       = datetime(2024, 1, 1, 8, 0)
+    sepsis_onset = datetime(2024, 1, 1, 14, 0)
+
+    patient_meta = {
+        'age': 68,
+        'gender': 1,
+        'intime': intime,
+        'sepsis_onset_time': sepsis_onset,
+        'window_start_vital': max(sepsis_onset - timedelta(hours=6), intime),
+        'window_start_lab':   sepsis_onset - timedelta(hours=6),
+        'window_end':         sepsis_onset + timedelta(hours=42),
+    }
+
+    timestamps = pd.date_range(
+        start=patient_meta['window_start_vital'],
+        end=patient_meta['window_end'], freq='1h'
+    )
+    n = len(timestamps)
+    np.random.seed(42)
+
+    vital_ts = pd.DataFrame({
+        'charttime':     timestamps,
+        'heart_rate':    np.random.normal(95, 10, n).clip(60, 140),
+        'mbp':           np.random.normal(65, 8, n).clip(45, 100),
+        'sbp':           np.random.normal(105, 12, n).clip(70, 160),
+        'dbp':           np.random.normal(60, 8, n).clip(40, 100),
+        'resp_rate':     np.random.normal(22, 4, n).clip(10, 35),
+        'spo2':          np.random.normal(94, 3, n).clip(80, 100),
+        'temperature':   np.random.normal(38.2, 0.5, n).clip(36, 40),
+        'gcs':           np.random.choice([13, 14, 15], n).astype(float),
+        'pao2fio2ratio': np.random.normal(220, 50, n).clip(100, 400),
+    })
+
+    lab_times = sorted(np.random.choice(
+        pd.date_range(patient_meta['window_start_lab'],
+                      patient_meta['window_end'], freq='2h').tolist(),
+        size=12, replace=False
+    ))
+    lab_df = pd.DataFrame({
+        'charttime':       lab_times,
+        'lactate':         np.random.normal(3.2, 1.0, 12).clip(0.5, 8.0),
+        'creatinine':      np.random.normal(1.8, 0.5, 12).clip(0.5, 5.0),
+        'bun':             np.random.normal(28, 8, 12).clip(5, 60),
+        'sodium':          np.random.normal(138, 4, 12).clip(125, 150),
+        'potassium':       np.random.normal(4.1, 0.5, 12).clip(3.0, 6.0),
+        'glucose':         np.random.normal(145, 30, 12).clip(70, 300),
+        'bicarbonate':     np.random.normal(20, 3, 12).clip(12, 30),
+        'albumin':         np.random.normal(2.8, 0.4, 12).clip(1.5, 4.5),
+        'wbc':             np.random.normal(14, 4, 12).clip(2, 30),
+        'platelet':        np.random.normal(180, 60, 12).clip(50, 400),
+        'hemoglobin':      np.random.normal(9.5, 1.5, 12).clip(6, 14),
+        'bilirubin_total': np.random.normal(1.8, 0.8, 12).clip(0.3, 8.0),
+    })
+
+    result = predict_mortality(vital_ts, lab_df, patient_meta)
+    print(json.dumps(result, indent=2))
