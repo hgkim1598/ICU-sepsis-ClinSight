@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import html
+from datetime import datetime
 
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 from api_client import (
     MODEL_KR_NAME,
@@ -11,6 +13,22 @@ from api_client import (
     fetch_dashboard_data,
     get_feature_display_name,
 )
+
+
+# ── Mock patient roster (sidebar 전용) ────────────────────────
+MOCK_PATIENTS = [
+    {"id": "ICU-2026-0410", "name": "Kim Minseo",   "sofa": 12, "risk": "High"},
+    {"id": "ICU-2026-0411", "name": "Park Jihye",   "sofa": 8,  "risk": "Moderate"},
+    {"id": "ICU-2026-0412", "name": "Lee Junho",    "sofa": 5,  "risk": "Low"},
+    {"id": "ICU-2026-0413", "name": "Choi Soyoung", "sofa": 14, "risk": "High"},
+    {"id": "ICU-2026-0414", "name": "Jung Hyunwoo", "sofa": 9,  "risk": "Moderate"},
+    {"id": "ICU-2026-0415", "name": "Kang Dahye",   "sofa": 3,  "risk": "Low"},
+    {"id": "ICU-2026-0416", "name": "Yoon Taejun",  "sofa": 11, "risk": "High"},
+    {"id": "ICU-2026-0417", "name": "Han Mijin",    "sofa": 6,  "risk": "Moderate"},
+    {"id": "ICU-2026-0418", "name": "Oh Seungho",   "sofa": 4,  "risk": "Low"},
+    {"id": "ICU-2026-0419", "name": "Bae Yuna",     "sofa": 10, "risk": "High"},
+]
+RISK_KR = {"High": "위험", "Moderate": "주의", "Low": "안정"}
 
 st.set_page_config(
     page_title="ICU ClinSight Dashboard",
@@ -410,6 +428,487 @@ def inject_styles() -> None:
             font-size: 0.75rem;
             color: {T_SECONDARY};
         }}
+
+        /* ═══════════════════════════════════════════════════════
+           신규 추가: 사이드바 & 새로고침 버튼
+           (기존 컴포넌트/클래스와 독립된 cs- 네임스페이스)
+           ═══════════════════════════════════════════════════════ */
+
+        /* Streamlit의 기본 사이드바는 hover peek 등을 유발하므로 완전히 숨김 */
+        section[data-testid="stSidebar"],
+        div[data-testid="stSidebarCollapsedControl"],
+        button[data-testid="stSidebarCollapseButton"],
+        div[data-testid="collapsedControl"] {{
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            min-width: 0 !important;
+            pointer-events: none !important;
+        }}
+
+        /* ── Streamlit main block container 높이 고정 ──
+           hover 시 stMainBlockContainer가 height: auto로 줄어드는 현상이 있어
+           사이드바 트리거/인식 영역이 왔다갔다 하는 것처럼 보임.
+           항상 전체 화면 높이를 유지하도록 강제. */
+        [data-testid="stMainBlockContainer"] {{
+            min-height: 100vh !important;
+            height: 100vh !important;
+        }}
+
+        /* ── 햄버거 버튼 (사이드바 열림 시 사이드바 우측 상단으로 이동) ── */
+        .cs-hamburger {{
+            position: fixed;
+            top: 14px;
+            left: 14px;
+            z-index: 1050;
+            width: 34px;
+            height: 34px;
+            border: 1px solid {CARD_BORDER};
+            background: {CARD_BG};
+            border-radius: 8px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            box-shadow: 0 1px 3px rgba(15,23,42,.08);
+            color: {T_PRIMARY};
+            font-size: 16px;
+            /* hover에 반응하는 속성 없음 — 위치는 오직 body.cs-open 상태로만 변함 */
+            transition: left 0.28s cubic-bezier(.4,0,.2,1);
+        }}
+        .cs-hamburger-icon {{
+            display: inline-flex;
+            flex-direction: column;
+            gap: 4px;
+        }}
+        .cs-hamburger-icon span {{
+            width: 16px;
+            height: 2px;
+            background: {T_PRIMARY};
+            border-radius: 1px;
+        }}
+        body.cs-open .cs-hamburger {{
+            /* 사이드바(320px)의 우측 끝 상단으로 이동 */
+            left: calc(320px - 34px - 14px);
+        }}
+
+        /* ── 슬라이드 사이드바 (라이트 테마, 화면 전체 높이 고정) ── */
+        .cs-sidebar {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            /* 마우스 위치/부모 크기와 무관하게 항상 100vh — min/max 모두 고정 */
+            height: 100vh !important;
+            min-height: 100vh !important;
+            max-height: 100vh !important;
+            width: 320px;
+            min-width: 320px;
+            max-width: 320px;
+            background: #f8fafc;
+            color: #1e293b;
+            z-index: 1045;
+            transform: translateX(-100%);
+            /* 닫힘 상태: 마우스 이벤트 완전 차단 */
+            pointer-events: none;
+            transition: transform 0.28s cubic-bezier(.4,0,.2,1);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 12px rgba(15,23,42,.1);
+            overflow: hidden;
+        }}
+        /* 열림 상태 — transform/pointer-events만 변경, hover 없음 */
+        body.cs-open .cs-sidebar {{
+            transform: translateX(0);
+            pointer-events: auto;
+        }}
+
+        .cs-sidebar-header {{
+            padding: 1.1rem 1.1rem 0.9rem;
+            border-bottom: 1px solid #e2e8f0;
+            flex-shrink: 0;
+            background: #ffffff;
+        }}
+        .cs-sidebar-title {{
+            font-size: 0.92rem;
+            font-weight: 800;
+            color: #0f172a;
+            letter-spacing: 0.01em;
+        }}
+        .cs-sidebar-subtitle {{
+            font-size: 0.68rem;
+            color: #64748b;
+            margin-top: 0.15rem;
+        }}
+        .cs-search-wrap {{
+            position: relative;
+            margin-top: 0.8rem;
+        }}
+        .cs-search {{
+            width: 100%;
+            padding: 0.5rem 0.7rem 0.5rem 2rem;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            color: #1e293b;
+            font-size: 0.76rem;
+            outline: none;
+            box-sizing: border-box;
+            font-family: inherit;
+        }}
+        .cs-search::placeholder {{ color: #94a3b8; }}
+        .cs-search:focus {{
+            border-color: {ACCENT_BLUE};
+            background: #ffffff;
+        }}
+        .cs-search-icon {{
+            position: absolute;
+            left: 0.65rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 0.8rem;
+            pointer-events: none;
+        }}
+
+        /* ── 환자 리스트 (스크롤 없음, 페이지당 4명) ── */
+        .cs-patient-list {{
+            flex: 1;
+            overflow: hidden;
+            padding: 0.7rem 0.8rem 0.4rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }}
+        .cs-patient-item {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.6rem 0.75rem;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            transition: background 0.12s, border-color 0.12s;
+        }}
+        .cs-patient-item:hover {{
+            background: #dbeafe;
+            border-color: #bfdbfe;
+        }}
+        .cs-patient-item.is-selected {{
+            background: #dbeafe;
+            border-color: {ACCENT_BLUE};
+        }}
+        .cs-patient-item.is-hidden {{ display: none; }}
+
+        .cs-patient-info {{
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }}
+        .cs-patient-name {{
+            font-size: 0.84rem;
+            font-weight: 700;
+            color: #0f172a;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+        .cs-patient-id {{
+            font-size: 0.66rem;
+            color: #64748b;
+            margin-top: 0.1rem;
+        }}
+        .cs-patient-meta {{
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.22rem;
+            flex-shrink: 0;
+            margin-left: 0.6rem;
+        }}
+        .cs-sofa {{
+            font-size: 0.68rem;
+            color: #64748b;
+        }}
+        .cs-sofa-val {{ font-weight: 800; color: #0f172a; }}
+        .cs-risk-badge {{
+            padding: 0.14rem 0.45rem;
+            border-radius: 6px;
+            font-size: 0.6rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }}
+        /* 위험도 뱃지 색상은 유지 (기존 대시보드 색상 참조) */
+        .cs-risk-High     {{ background: {RISK_HIGH_BG}; color: {RISK_HIGH}; }}
+        .cs-risk-Moderate {{ background: {RISK_MOD_BG};  color: {RISK_MOD};  }}
+        .cs-risk-Low      {{ background: {RISK_LOW_BG};  color: {RISK_LOW};  }}
+
+        .cs-empty {{
+            text-align: center;
+            color: #94a3b8;
+            font-size: 0.76rem;
+            padding: 1.5rem 0.5rem;
+        }}
+
+        /* ── 페이지네이션 ── */
+        .cs-pagination {{
+            flex-shrink: 0;
+            padding: 0.7rem 0.9rem 1rem;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+            background: #ffffff;
+        }}
+        .cs-page-btn {{
+            min-width: 28px;
+            height: 28px;
+            padding: 0 0.5rem;
+            border-radius: 6px;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            color: #475569;
+            font-size: 0.74rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-family: inherit;
+        }}
+        .cs-page-btn:hover:not(:disabled) {{
+            background: #dbeafe;
+            border-color: #bfdbfe;
+            color: #1e40af;
+        }}
+        .cs-page-btn:disabled {{
+            opacity: 0.35;
+            cursor: not-allowed;
+        }}
+        .cs-page-btn.is-active {{
+            background: {ACCENT_BLUE};
+            border-color: {ACCENT_BLUE};
+            color: #ffffff;
+        }}
+
+        /* ── 새로고침 버튼 (헤더 우측) ── */
+        .cs-refresh-btn {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 0.55rem;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            background: transparent;
+            border: 1px solid {CARD_BORDER};
+            color: {T_SECONDARY};
+            cursor: pointer;
+            vertical-align: middle;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+            padding: 0;
+            line-height: 1;
+        }}
+        .cs-refresh-btn svg {{
+            width: 12px;
+            height: 12px;
+            transition: transform 0.4s ease;
+        }}
+        .cs-refresh-btn:hover {{
+            background: #eff6ff;
+            color: {ACCENT_BLUE};
+            border-color: #93c5fd;
+        }}
+        .cs-refresh-btn:hover svg,
+        .cs-refresh-btn.is-spinning svg {{
+            animation: cs-spin 0.8s linear infinite;
+        }}
+        @keyframes cs-spin {{
+            from {{ transform: rotate(0deg); }}
+            to   {{ transform: rotate(360deg); }}
+        }}
+
+        /* ── 테마 토글 버튼 (새로고침 버튼 옆) ── */
+        .cs-theme-btn {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 0.4rem;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            background: transparent;
+            border: 1px solid {CARD_BORDER};
+            color: {T_SECONDARY};
+            cursor: pointer;
+            vertical-align: middle;
+            transition: background 0.15s, border-color 0.15s;
+            padding: 0;
+            line-height: 1;
+            font-size: 11px;
+        }}
+        .cs-theme-btn:hover {{
+            background: #eff6ff;
+            border-color: #93c5fd;
+        }}
+        .cs-theme-icon {{ font-size: 11px; line-height: 1; }}
+
+        /* 숨겨진 Streamlit trigger 버튼 / height=0 iframe은 JS에서 직접 스타일 처리 */
+
+        /* ═══════════════════════════════════════════════════════
+           다크모드 오버라이드 (body.cs-dark)
+           기존 라이트 스타일은 수정하지 않고, 같은 셀렉터를 더 강한
+           명시도로 덮어쓰는 방식
+           ═══════════════════════════════════════════════════════ */
+        body.cs-dark .stApp {{
+            background: #0f172a;
+            color: #e2e8f0;
+        }}
+        body.cs-dark .page-title {{ color: #f1f5f9; }}
+        body.cs-dark .page-subtitle,
+        body.cs-dark .page-meta {{ color: #94a3b8; }}
+        body.cs-dark .page-meta-value {{ color: #cbd5e1; }}
+
+        /* Patient bar */
+        body.cs-dark .patient-bar {{
+            background: linear-gradient(135deg, #1e293b 0%, #1e3a5f 100%);
+            border-color: #334155;
+        }}
+        body.cs-dark .pb-label {{ color: #93c5fd; }}
+        body.cs-dark .pb-value {{ color: #f1f5f9; }}
+        body.cs-dark .pb-divider {{ background: #334155; }}
+
+        /* Section heading */
+        body.cs-dark .section-heading {{ color: #94a3b8; }}
+
+        /* Summary cards */
+        body.cs-dark div[data-testid="stVerticalBlock"]:has(.summary-card-anchor) {{
+            background: #1e293b;
+            border-color: #334155;
+        }}
+        body.cs-dark div[data-testid="stVerticalBlock"]:has(.summary-card-selected-anchor) {{
+            background: #1e293b;
+            border-color: #60a5fa;
+            border-bottom-color: #60a5fa;
+        }}
+        body.cs-dark .sc-name,
+        body.cs-dark .sc-percent {{ color: #f1f5f9; }}
+
+        /* Plotly 도넛 중앙 퍼센트 텍스트는 SVG로 렌더링되어
+           Python 측에서 지정한 색(T_PRIMARY)이 SVG fill로 박혀있음.
+           다크모드에서 보이도록 fill을 덮어씀. */
+        body.cs-dark div.js-plotly-plot text,
+        body.cs-dark .stPlotlyChart text,
+        body.cs-dark .stPlotlyChart .annotation-text {{
+            fill: #f1f5f9 !important;
+        }}
+
+        /* Detail panel */
+        body.cs-dark div[data-testid="stVerticalBlock"]:has(.detail-panel-anchor) {{
+            background: #1e293b;
+            border-color: #334155;
+        }}
+        body.cs-dark .detail-title {{ border-bottom-color: #334155; }}
+        body.cs-dark .detail-title-text {{ color: #f1f5f9; }}
+        body.cs-dark .detail-title-meta,
+        body.cs-dark .card-section-label {{ color: #94a3b8; }}
+
+        /* SHAP */
+        body.cs-dark .shap-name {{ color: #cbd5e1; }}
+        body.cs-dark .shap-track {{ background: #334155; }}
+
+        /* Feature table */
+        body.cs-dark .feat-table th {{
+            color: #94a3b8;
+            border-bottom-color: #334155;
+        }}
+        body.cs-dark .feat-table td {{ border-bottom-color: #253145; }}
+        body.cs-dark .fn-cell {{ color: #cbd5e1; }}
+        body.cs-dark .fr-cell {{ color: #94a3b8; }}
+
+        /* Description box */
+        body.cs-dark .desc-box {{
+            background: #253145;
+            border-left-color: #60a5fa;
+        }}
+        body.cs-dark .desc-text {{ color: #cbd5e1; }}
+
+        /* Sidebar — dark variant */
+        body.cs-dark .cs-sidebar {{
+            background: #0f172a;
+            color: #e2e8f0;
+            box-shadow: 2px 0 16px rgba(0,0,0,.45);
+        }}
+        body.cs-dark .cs-sidebar-header {{
+            background: #1e293b;
+            border-bottom-color: #334155;
+        }}
+        body.cs-dark .cs-sidebar-title {{ color: #f1f5f9; }}
+        body.cs-dark .cs-sidebar-subtitle,
+        body.cs-dark .cs-empty {{ color: #94a3b8; }}
+        body.cs-dark .cs-search {{
+            background: #1e293b;
+            border-color: #334155;
+            color: #e2e8f0;
+        }}
+        body.cs-dark .cs-search::placeholder {{ color: #64748b; }}
+        body.cs-dark .cs-search:focus {{
+            border-color: #60a5fa;
+            background: #253145;
+        }}
+        body.cs-dark .cs-search-icon {{ color: #64748b; }}
+        body.cs-dark .cs-patient-item {{
+            background: #1e293b;
+            border-color: #334155;
+        }}
+        body.cs-dark .cs-patient-item:hover {{
+            background: #253145;
+            border-color: #475569;
+        }}
+        body.cs-dark .cs-patient-item.is-selected {{
+            background: rgba(37,99,235,.22);
+            border-color: #60a5fa;
+        }}
+        body.cs-dark .cs-patient-name,
+        body.cs-dark .cs-sofa-val {{ color: #f1f5f9; }}
+        body.cs-dark .cs-patient-id {{ color: #94a3b8; }}
+        body.cs-dark .cs-sofa {{ color: #cbd5e1; }}
+        body.cs-dark .cs-pagination {{
+            background: #1e293b;
+            border-top-color: #334155;
+        }}
+        body.cs-dark .cs-page-btn {{
+            background: #1e293b;
+            border-color: #334155;
+            color: #cbd5e1;
+        }}
+        body.cs-dark .cs-page-btn:hover:not(:disabled) {{
+            background: #253145;
+            border-color: #475569;
+            color: #f1f5f9;
+        }}
+
+        /* Hamburger / header buttons in dark */
+        body.cs-dark .cs-hamburger {{
+            background: #1e293b;
+            border-color: #334155;
+            color: #f1f5f9;
+        }}
+        body.cs-dark .cs-hamburger-icon span {{ background: #f1f5f9; }}
+        body.cs-dark .cs-refresh-btn,
+        body.cs-dark .cs-theme-btn {{
+            border-color: #334155;
+            color: #cbd5e1;
+        }}
+        body.cs-dark .cs-refresh-btn:hover,
+        body.cs-dark .cs-theme-btn:hover {{
+            background: #253145;
+            border-color: #475569;
+            color: #f1f5f9;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -555,6 +1054,19 @@ def render_page_header(data: dict) -> None:
             f'<span style="color:{src_color};font-weight:700;">● {source_label}</span>'
             f' &nbsp;·&nbsp; '
             f'마지막 업데이트 <span class="page-meta-value">{updated}</span>'
+            f'<button class="cs-refresh-btn" id="cs-refresh-btn" title="새로고침" aria-label="새로고침">'
+            f'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" '
+            f'stroke-linecap="round" stroke-linejoin="round">'
+            f'<polyline points="23 4 23 10 17 10"></polyline>'
+            f'<polyline points="1 20 1 14 7 14"></polyline>'
+            f'<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"></path>'
+            f'<path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14"></path>'
+            f'</svg>'
+            f'</button>'
+            f'<button class="cs-theme-btn" id="cs-theme-btn" '
+            f'title="테마 전환" aria-label="테마 전환">'
+            f'<span class="cs-theme-icon">🌙</span>'
+            f'</button>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -714,6 +1226,337 @@ def render_detail_panel(data: dict) -> None:
 
 
 # ─────────────────────────────────────────────────────────────
+# Sidebar overlay + refresh wiring (신규 추가)
+# ─────────────────────────────────────────────────────────────
+def _render_patient_items_html(current_name: str) -> str:
+    items = []
+    for idx, p in enumerate(MOCK_PATIENTS):
+        is_selected = p["name"] == current_name
+        risk = p["risk"]
+        items.append(
+            f'<div class="cs-patient-item{" is-selected" if is_selected else ""}" '
+            f'data-name="{html.escape(p["name"]).lower()}" '
+            f'data-id="{html.escape(p["id"]).lower()}" '
+            f'data-idx="{idx}">'
+            f'<div class="cs-patient-info">'
+            f'<div class="cs-patient-name">{html.escape(p["name"])}</div>'
+            f'<div class="cs-patient-id">{html.escape(p["id"])}</div>'
+            f'</div>'
+            f'<div class="cs-patient-meta">'
+            f'<div class="cs-sofa">SOFA <span class="cs-sofa-val">{p["sofa"]}</span></div>'
+            f'<span class="cs-risk-badge cs-risk-{risk}">{html.escape(RISK_KR[risk])}</span>'
+            f'</div>'
+            f'</div>'
+        )
+    return "".join(items)
+
+
+def render_sidebar_and_controls(data: dict) -> None:
+    current_name = str(data.get("patient", {}).get("name", ""))
+    patient_items_html = _render_patient_items_html(current_name)
+
+    # 햄버거 + 배경 + 사이드바 마크업
+    st.markdown(
+        f"""
+        <button class="cs-hamburger" id="cs-hamburger" aria-label="환자 목록 열기">
+          <span class="cs-hamburger-icon"><span></span><span></span><span></span></span>
+        </button>
+        <aside class="cs-sidebar" id="cs-sidebar" aria-hidden="true">
+          <div class="cs-sidebar-header">
+            <div class="cs-sidebar-title">환자 목록</div>
+            <div class="cs-sidebar-subtitle">이름 또는 ID로 검색</div>
+            <div class="cs-search-wrap">
+              <span class="cs-search-icon">🔍</span>
+              <input type="text" class="cs-search" id="cs-search"
+                     placeholder="환자 검색..." autocomplete="off" />
+            </div>
+          </div>
+          <div class="cs-patient-list" id="cs-patient-list">
+            {patient_items_html}
+            <div class="cs-empty" id="cs-empty" style="display:none;">
+              검색 결과가 없습니다.
+            </div>
+          </div>
+          <div class="cs-pagination" id="cs-pagination"></div>
+        </aside>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # 새로고침 trigger (숨겨진 Streamlit 버튼 — JS에서 click()으로 호출)
+    with st.container():
+        st.markdown(
+            '<div class="cs-refresh-trigger-anchor"></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("refresh", key="_cs_refresh_trigger"):
+            # 버튼 클릭 자체가 rerun을 유발하며 fetch_dashboard_data도 재호출됨
+            pass
+
+    # 상호작용 JS 주입 (height=0 iframe)
+    components.html(
+        """
+        <script>
+        (function() {
+            const pageWin = window.parent;
+            const pageDoc = pageWin.document;
+            const PER_PAGE = 4;
+
+            function waitFor(selector, cb, tries) {
+                tries = tries == null ? 50 : tries;
+                const el = pageDoc.querySelector(selector);
+                if (el) return cb(el);
+                if (tries <= 0) return;
+                setTimeout(function() { waitFor(selector, cb, tries - 1); }, 80);
+            }
+
+            // ── stMainBlockContainer height 고정 (Streamlit이 inline style을
+            //    동적으로 덮어쓰는 것을 MutationObserver로 즉시 복원) ──
+            function lockMainContainerHeight(target) {
+                if (!target || target.dataset.csHeightLocked === '1') return;
+                target.dataset.csHeightLocked = '1';
+
+                function forceHeight() {
+                    if (target.style.height !== '100vh') {
+                        target.style.setProperty('height', '100vh', 'important');
+                    }
+                    if (target.style.minHeight !== '100vh') {
+                        target.style.setProperty('min-height', '100vh', 'important');
+                    }
+                }
+                forceHeight();
+
+                const observer = new pageWin.MutationObserver(function() {
+                    forceHeight();
+                });
+                observer.observe(target, {
+                    attributes: true,
+                    attributeFilter: ['style']
+                });
+            }
+            waitFor('[data-testid="stMainBlockContainer"]', lockMainContainerHeight);
+
+            // 숨겨진 refresh trigger 컨테이너는 JS로 가장 가까운 block만 off-screen 처리
+            function hideTriggerContainer() {
+                const anchor = pageDoc.querySelector('.cs-refresh-trigger-anchor');
+                if (!anchor) return;
+                const container = anchor.closest('[data-testid="stVerticalBlock"]');
+                if (container && !container.dataset.csHidden) {
+                    container.dataset.csHidden = '1';
+                    container.style.position = 'absolute';
+                    container.style.left = '-9999px';
+                    container.style.top = '-9999px';
+                    container.style.width = '1px';
+                    container.style.height = '1px';
+                    container.style.overflow = 'hidden';
+                }
+            }
+            hideTriggerContainer();
+            waitFor('.cs-refresh-trigger-anchor', hideTriggerContainer);
+
+            waitFor('#cs-hamburger', function() {
+                const body = pageDoc.body;
+                const hamburger = pageDoc.getElementById('cs-hamburger');
+                const sidebar = pageDoc.getElementById('cs-sidebar');
+
+                // ── body 직속으로 이식 (Streamlit 컨테이너 종속 해제) ──
+                // 부모 stVerticalBlock의 height:auto가 hover로 흔들려도
+                // 이식된 fixed 요소는 영향을 받지 않음.
+                if (hamburger && hamburger.parentElement !== body) {
+                    const originalContainer = hamburger.closest(
+                        '[data-testid="stElementContainer"]'
+                    );
+                    if (originalContainer) originalContainer.style.display = 'none';
+                    body.appendChild(hamburger);
+                }
+                if (sidebar && sidebar.parentElement !== body) {
+                    body.appendChild(sidebar);
+                }
+
+                const searchInput = pageDoc.getElementById('cs-search');
+                const listEl = pageDoc.getElementById('cs-patient-list');
+                const emptyEl = pageDoc.getElementById('cs-empty');
+                const pagerEl = pageDoc.getElementById('cs-pagination');
+                if (!hamburger || !sidebar) return;
+
+                // 중복 바인딩 방지
+                if (hamburger.dataset.csBound === '1') return;
+                hamburger.dataset.csBound = '1';
+
+                const items = Array.prototype.slice.call(
+                    listEl.querySelectorAll('.cs-patient-item')
+                );
+
+                let currentPage = 1;
+                let filteredItems = items.slice();
+
+                function openSidebar() {
+                    body.classList.add('cs-open');
+                    sidebar.setAttribute('aria-hidden', 'false');
+                }
+                function closeSidebar() {
+                    body.classList.remove('cs-open');
+                    sidebar.setAttribute('aria-hidden', 'true');
+                }
+                hamburger.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (body.classList.contains('cs-open')) closeSidebar();
+                    else openSidebar();
+                });
+                // 사이드바 내부 클릭이 document로 버블링되어 즉시 닫히지 않도록 차단
+                sidebar.addEventListener('click', function(e) { e.stopPropagation(); });
+                // 사이드바/햄버거 바깥 영역 클릭 시 닫힘 (배경 없이)
+                pageDoc.addEventListener('click', function(e) {
+                    if (!body.classList.contains('cs-open')) return;
+                    if (sidebar.contains(e.target) || hamburger.contains(e.target)) return;
+                    closeSidebar();
+                });
+                pageDoc.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape') closeSidebar();
+                });
+
+                function renderPage() {
+                    const total = filteredItems.length;
+                    const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+                    if (currentPage > totalPages) currentPage = totalPages;
+                    if (currentPage < 1) currentPage = 1;
+
+                    if (total === 0) {
+                        emptyEl.style.display = 'block';
+                    } else {
+                        emptyEl.style.display = 'none';
+                        const start = (currentPage - 1) * PER_PAGE;
+                        const end = start + PER_PAGE;
+                        const visible = filteredItems.slice(start, end);
+                        items.forEach(function(el) {
+                            el.classList.add('is-hidden');
+                        });
+                        visible.forEach(function(el) {
+                            el.classList.remove('is-hidden');
+                        });
+                    }
+                    renderPager(totalPages);
+                }
+
+                function renderPager(totalPages) {
+                    pagerEl.innerHTML = '';
+                    if (totalPages <= 1) return;
+
+                    const prev = pageDoc.createElement('button');
+                    prev.className = 'cs-page-btn';
+                    prev.textContent = '<';
+                    prev.disabled = currentPage === 1;
+                    prev.addEventListener('click', function() {
+                        if (currentPage > 1) { currentPage--; renderPage(); }
+                    });
+                    pagerEl.appendChild(prev);
+
+                    for (let i = 1; i <= totalPages; i++) {
+                        const b = pageDoc.createElement('button');
+                        b.className = 'cs-page-btn' + (i === currentPage ? ' is-active' : '');
+                        b.textContent = String(i);
+                        b.addEventListener('click', (function(page) {
+                            return function() { currentPage = page; renderPage(); };
+                        })(i));
+                        pagerEl.appendChild(b);
+                    }
+
+                    const next = pageDoc.createElement('button');
+                    next.className = 'cs-page-btn';
+                    next.textContent = '>';
+                    next.disabled = currentPage === totalPages;
+                    next.addEventListener('click', function() {
+                        if (currentPage < totalPages) { currentPage++; renderPage(); }
+                    });
+                    pagerEl.appendChild(next);
+                }
+
+                function applyFilter() {
+                    const q = (searchInput.value || '').trim().toLowerCase();
+                    if (!q) {
+                        filteredItems = items.slice();
+                    } else {
+                        filteredItems = items.filter(function(el) {
+                            const n = el.dataset.name || '';
+                            const id = el.dataset.id || '';
+                            return n.indexOf(q) !== -1 || id.indexOf(q) !== -1;
+                        });
+                    }
+                    // 모든 리스트 항목은 기본적으로 is-hidden로 만들고,
+                    // 현재 페이지만 보여주는 방식으로 일원화
+                    items.forEach(function(el) { el.classList.add('is-hidden'); });
+                    currentPage = 1;
+                    renderPage();
+                }
+                searchInput.addEventListener('input', applyFilter);
+
+                // 환자 항목 클릭 — 시각적 선택만 (백엔드가 단일 환자라 rerun 없음)
+                items.forEach(function(el) {
+                    el.addEventListener('click', function() {
+                        items.forEach(function(x) { x.classList.remove('is-selected'); });
+                        el.classList.add('is-selected');
+                    });
+                });
+
+                applyFilter();
+
+                // ── 새로고침 버튼: 숨겨진 Streamlit 버튼을 클릭 ──
+                const refreshBtn = pageDoc.getElementById('cs-refresh-btn');
+                if (refreshBtn && refreshBtn.dataset.csBound !== '1') {
+                    refreshBtn.dataset.csBound = '1';
+                    refreshBtn.addEventListener('click', function() {
+                        refreshBtn.classList.add('is-spinning');
+                        const anchor = pageDoc.querySelector('.cs-refresh-trigger-anchor');
+                        if (!anchor) return;
+                        const container = anchor.closest('[data-testid="stVerticalBlock"]');
+                        if (!container) return;
+                        const hiddenBtn = container.querySelector('button');
+                        if (hiddenBtn) hiddenBtn.click();
+                    });
+                }
+
+                // ── 테마 토글 (라이트 ↔ 다크), localStorage 저장 ──
+                const themeBtn = pageDoc.getElementById('cs-theme-btn');
+                function applyTheme(mode) {
+                    if (mode === 'dark') {
+                        body.classList.add('cs-dark');
+                    } else {
+                        body.classList.remove('cs-dark');
+                    }
+                    if (themeBtn) {
+                        const iconEl = themeBtn.querySelector('.cs-theme-icon');
+                        if (iconEl) iconEl.textContent = (mode === 'dark') ? '☀️' : '🌙';
+                        themeBtn.setAttribute(
+                            'title',
+                            mode === 'dark' ? '라이트모드로 전환' : '다크모드로 전환'
+                        );
+                    }
+                }
+                let savedTheme = 'light';
+                try {
+                    savedTheme = pageWin.localStorage.getItem('cs-theme') || 'light';
+                } catch (e) { /* localStorage 접근 실패 시 light */ }
+                applyTheme(savedTheme);
+
+                if (themeBtn && themeBtn.dataset.csBound !== '1') {
+                    themeBtn.dataset.csBound = '1';
+                    themeBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const next = body.classList.contains('cs-dark') ? 'light' : 'dark';
+                        applyTheme(next);
+                        try { pageWin.localStorage.setItem('cs-theme', next); }
+                        catch (err) { /* 저장 실패 무시 */ }
+                    });
+                }
+            });
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
+
+# ─────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────
 def main() -> None:
@@ -729,6 +1572,11 @@ def main() -> None:
         use_mock_on_error=True,
     )
 
+    # 새로고침 시 last-updated가 실제로 갱신되도록 현재 시각을 stamp
+    dashboard_data.setdefault("meta", {})["last_updated_display"] = (
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+
     render_page_header(dashboard_data)
     render_patient_bar(dashboard_data)
 
@@ -738,6 +1586,9 @@ def main() -> None:
     )
     render_summary_cards(dashboard_data)
     render_detail_panel(dashboard_data)
+
+    # 신규 추가: 좌측 슬라이드 사이드바 (overlay) + 새로고침 버튼 wiring
+    render_sidebar_and_controls(dashboard_data)
 
 
 if __name__ == "__main__":
