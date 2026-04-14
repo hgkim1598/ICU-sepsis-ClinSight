@@ -46,7 +46,7 @@ def predict_mortality(
     # ── feature_values 구성 (age 제외) ───────────────────────
     feature_values = []
     for feat in FEAT_COLS:
-        if feat == 'age':
+        if feat in ( 'age', 'gender'):
             continue
         raw_val = feats.get(feat)
         ch      = changes.get(feat, {})
