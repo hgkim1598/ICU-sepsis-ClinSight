@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from dotenv import load_dotenv
 
 from feature_labels import FEATURE_LABELS, get_feature_label
 
 
-API_BASE_URL = os.getenv("DASHBOARD_API_BASE_URL", "http://localhost:8000")
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
+PATIENTS_ENDPOINT = "/patients"
 # 단일 모델 예측 endpoint (API 연동 시 이 경로로 호출)
 MODEL_PREDICT_ENDPOINT = "/api/v1/predict/{patient_id}/{model_name}"
 # (구) 대시보드 일괄 endpoint — 남아있으면 호환용으로 우선 사용
@@ -149,6 +154,32 @@ MOCK_DASHBOARD_DATA: Dict[str, Any] = {
         },
     },
 }
+
+
+def fetch_patients() -> List[str]:
+    """
+    GET /patients — 환자 ID 목록 반환.
+
+    응답 형식: {"patients": ["환자ID1", "환자ID2", ...]}
+    """
+    url = f"{API_BASE_URL.rstrip('/')}{PATIENTS_ENDPOINT}"
+    response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    payload = response.json()
+    patients = payload.get("patients", [])
+    return [str(pid) for pid in patients if pid is not None]
+
+
+def fetch_patient_data(patient_id: str) -> Dict[str, Any]:
+    """
+    GET /patients/{patient_id}/data — 환자 기본 정보 반환.
+
+    응답 형식: {"patient_id": "...", "patient_meta": {"age": ..., "gender": ..., ...}}
+    """
+    url = f"{API_BASE_URL.rstrip('/')}/patients/{patient_id}/data"
+    response = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+    response.raise_for_status()
+    return response.json()
 
 
 def format_last_updated(value: str | None) -> str:

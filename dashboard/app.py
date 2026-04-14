@@ -11,24 +11,10 @@ from api_client import (
     MODEL_KR_NAME,
     MODEL_ORDER,
     fetch_dashboard_data,
+    fetch_patient_data,
+    fetch_patients,
     get_feature_display_name,
 )
-
-
-# ── Mock patient roster (sidebar 전용) ────────────────────────
-MOCK_PATIENTS = [
-    {"id": "ICU-2026-0410", "name": "Kim Minseo",   "sofa": 12, "risk": "High"},
-    {"id": "ICU-2026-0411", "name": "Park Jihye",   "sofa": 8,  "risk": "Moderate"},
-    {"id": "ICU-2026-0412", "name": "Lee Junho",    "sofa": 5,  "risk": "Low"},
-    {"id": "ICU-2026-0413", "name": "Choi Soyoung", "sofa": 14, "risk": "High"},
-    {"id": "ICU-2026-0414", "name": "Jung Hyunwoo", "sofa": 9,  "risk": "Moderate"},
-    {"id": "ICU-2026-0415", "name": "Kang Dahye",   "sofa": 3,  "risk": "Low"},
-    {"id": "ICU-2026-0416", "name": "Yoon Taejun",  "sofa": 11, "risk": "High"},
-    {"id": "ICU-2026-0417", "name": "Han Mijin",    "sofa": 6,  "risk": "Moderate"},
-    {"id": "ICU-2026-0418", "name": "Oh Seungho",   "sofa": 4,  "risk": "Low"},
-    {"id": "ICU-2026-0419", "name": "Bae Yuna",     "sofa": 10, "risk": "High"},
-]
-RISK_KR = {"High": "위험", "Moderate": "주의", "Low": "안정"}
 
 st.set_page_config(
     page_title="ICU ClinSight Dashboard",
@@ -1065,49 +1051,57 @@ def render_page_header(data: dict) -> None:
 
 def render_patient_bar(data: dict) -> None:
     p = data.get("patient", {})
+    meta = p.get("patient_meta", {}) or {}
 
+    # 하드코딩(회색): 환자명, SOFA 점수 — API에 없어서 mock 값 유지
     name = html.escape(str(p.get("name", "-")))
-    age = p.get("age", "-")
-    age_str = f"{age}세" if age != "-" else "-"
-    gender_map = {"Male": "남성", "Female": "여성"}
-    gender = html.escape(gender_map.get(str(p.get("gender", "")), str(p.get("gender", "-"))))
-    icu_admit = html.escape(str(p.get("icu_admit_time", "-")))
-    sepsis_onset = html.escape(str(p.get("sepsis_onset", "-")))
-    sofa = p.get("sofa_score", "-")
-    sofa_color, sofa_bg = _sofa_style(sofa)
-    sofa_str = html.escape(str(sofa))
+    sofa_str = html.escape(str(p.get("sofa_score", "-")))
+
+    # API(검은색): 나이, 성별, ICU 입실, 패혈증 onset — patient_meta에서 매핑
+    age_raw = meta.get("age")
+    age_str = f"{age_raw}세" if age_raw not in (None, "") else "-"
+
+    gender_raw = str(meta.get("gender", ""))
+    gender_map = {"1": "남성", "0": "여성"}
+    gender_str = gender_map.get(gender_raw, "-")
+
+    icu_admit_str = str(meta.get("intime") or "-")
+    sepsis_onset_str = str(meta.get("sepsis_onset_time") or "-")
+
+    api_style = f"color:{T_PRIMARY};"
+    hc_style = f"color:{T_MUTED};"
 
     st.markdown(
         f"""
         <div class="patient-bar">
           <div class="pb-item">
             <span class="pb-label">환자</span>
-            <span class="pb-value pb-name">{name}</span>
+            <span class="pb-value pb-name" style="{hc_style}">{name}</span>
           </div>
           <div class="pb-divider"></div>
           <div class="pb-item">
             <span class="pb-label">나이</span>
-            <span class="pb-value">{html.escape(age_str)}</span>
+            <span class="pb-value" style="{api_style}">{html.escape(age_str)}</span>
           </div>
           <div class="pb-divider"></div>
           <div class="pb-item">
             <span class="pb-label">성별</span>
-            <span class="pb-value">{gender}</span>
+            <span class="pb-value" style="{api_style}">{html.escape(gender_str)}</span>
           </div>
           <div class="pb-divider"></div>
           <div class="pb-item">
             <span class="pb-label">ICU 입실</span>
-            <span class="pb-value">{icu_admit}</span>
+            <span class="pb-value" style="{api_style}">{html.escape(icu_admit_str)}</span>
           </div>
           <div class="pb-divider"></div>
           <div class="pb-item">
             <span class="pb-label">SOFA 점수</span>
-            <span class="pb-sofa-badge" style="color:{sofa_color};background:{sofa_bg};">{sofa_str}</span>
+            <span class="pb-value" style="{hc_style}">{sofa_str}</span>
           </div>
           <div class="pb-divider"></div>
           <div class="pb-item">
             <span class="pb-label">패혈증 onset</span>
-            <span class="pb-value">{sepsis_onset}</span>
+            <span class="pb-value" style="{api_style}">{html.escape(sepsis_onset_str)}</span>
           </div>
         </div>
         """,
@@ -1219,32 +1213,31 @@ def render_detail_panel(data: dict) -> None:
 # ─────────────────────────────────────────────────────────────
 # Sidebar overlay + refresh wiring (신규 추가)
 # ─────────────────────────────────────────────────────────────
-def _render_patient_items_html(current_name: str) -> str:
+def _render_patient_items_html(patient_ids: list[str], current_id: str) -> str:
     items = []
-    for idx, p in enumerate(MOCK_PATIENTS):
-        is_selected = p["name"] == current_name
-        risk = p["risk"]
+    for idx, pid in enumerate(patient_ids):
+        is_selected = pid == current_id
+        safe_pid = html.escape(pid)
         items.append(
             f'<div class="cs-patient-item{" is-selected" if is_selected else ""}" '
-            f'data-name="{html.escape(p["name"]).lower()}" '
-            f'data-id="{html.escape(p["id"]).lower()}" '
+            f'data-id="{safe_pid.lower()}" '
+            f'data-pid="{safe_pid}" '
             f'data-idx="{idx}">'
             f'<div class="cs-patient-info">'
-            f'<div class="cs-patient-name">{html.escape(p["name"])}</div>'
-            f'<div class="cs-patient-id">{html.escape(p["id"])}</div>'
-            f'</div>'
-            f'<div class="cs-patient-meta">'
-            f'<div class="cs-sofa">SOFA <span class="cs-sofa-val">{p["sofa"]}</span></div>'
-            f'<span class="cs-risk-badge cs-risk-{risk}">{html.escape(RISK_KR[risk])}</span>'
+            f'<div class="cs-patient-name">{safe_pid}</div>'
             f'</div>'
             f'</div>'
         )
     return "".join(items)
 
 
-def render_sidebar_and_controls(data: dict) -> None:
-    current_name = str(data.get("patient", {}).get("name", ""))
-    patient_items_html = _render_patient_items_html(current_name)
+def render_sidebar_and_controls(
+    data: dict,
+    patient_ids: list[str],
+    selected_pid: str | None,
+) -> None:
+    current_id = selected_pid or str(data.get("patient", {}).get("patient_id", ""))
+    patient_items_html = _render_patient_items_html(patient_ids, current_id)
 
     # 햄버거 + 배경 + 사이드바 마크업
     st.markdown(
@@ -1481,11 +1474,27 @@ def render_sidebar_and_controls(data: dict) -> None:
                 }
                 searchInput.addEventListener('input', applyFilter);
 
-                // 환자 항목 클릭 — 시각적 선택만 (백엔드가 단일 환자라 rerun 없음)
+                // 환자 항목 클릭 — URL query param에 patient_id 설정 후 rerun
                 items.forEach(function(el) {
                     el.addEventListener('click', function() {
                         items.forEach(function(x) { x.classList.remove('is-selected'); });
                         el.classList.add('is-selected');
+
+                        const pid = el.getAttribute('data-pid') || '';
+                        if (!pid) return;
+                        try {
+                            const url = new pageWin.URL(pageWin.location.href);
+                            url.searchParams.set('patient_id', pid);
+                            pageWin.history.replaceState({}, '', url);
+                        } catch (e) { /* URL 조작 실패 시 무시 */ }
+
+                        // 숨겨진 Streamlit refresh 버튼을 클릭 → 서버 rerun
+                        const anchor = pageDoc.querySelector('.cs-refresh-trigger-anchor');
+                        if (!anchor) return;
+                        const container = anchor.closest('[data-testid="stVerticalBlock"]');
+                        if (!container) return;
+                        const hiddenBtn = container.querySelector('button');
+                        if (hiddenBtn) hiddenBtn.click();
                     });
                 });
 
@@ -1558,10 +1567,34 @@ def main() -> None:
     if "use_mock_data" not in st.session_state:
         st.session_state["use_mock_data"] = True
 
+    # 환자 목록 조회 + 선택 환자 결정 (URL query param 우선)
+    try:
+        patient_ids = fetch_patients()
+    except Exception:
+        patient_ids = []
+
+    qp_pid = st.query_params.get("patient_id")
+    selected_pid = qp_pid or (patient_ids[0] if patient_ids else None)
+
     dashboard_data = fetch_dashboard_data(
         use_mock_override=bool(st.session_state["use_mock_data"]),
         use_mock_on_error=True,
+        patient_id=selected_pid,
     )
+
+    # 환자 기본 정보(API)를 dashboard_data.patient에 overlay
+    if selected_pid:
+        try:
+            patient_api = fetch_patient_data(selected_pid)
+            dashboard_data.setdefault("patient", {})
+            dashboard_data["patient"]["patient_id"] = patient_api.get(
+                "patient_id", selected_pid
+            )
+            dashboard_data["patient"]["patient_meta"] = patient_api.get(
+                "patient_meta", {}
+            )
+        except Exception:
+            dashboard_data.setdefault("patient", {}).setdefault("patient_meta", {})
 
     # 새로고침 시 last-updated가 실제로 갱신되도록 현재 시각을 stamp
     dashboard_data.setdefault("meta", {})["last_updated_display"] = (
@@ -1579,7 +1612,7 @@ def main() -> None:
     render_detail_panel(dashboard_data)
 
     # 신규 추가: 좌측 슬라이드 사이드바 (overlay) + 새로고침 버튼 wiring
-    render_sidebar_and_controls(dashboard_data)
+    render_sidebar_and_controls(dashboard_data, patient_ids, selected_pid)
 
 
 if __name__ == "__main__":
