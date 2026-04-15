@@ -12,6 +12,9 @@ v1 (2026-04):
   - 초기 버전 작성 (mortality / ARDS predict.py 인터페이스 통일)
   - S3 / 로컬 모델 로드 지원
   - scaler.pkl 로드 후 X_seq / X_xgb 스케일링 적용
+v2 (2026-04):
+  - padding_mask 피처 제거 (input_size 42 → 41)
+  - eICU 외부 검증 결과 반영하여 재학습된 모델 대응
 """
 
 import json
@@ -40,7 +43,7 @@ device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # LSTM 하이퍼파라미터 (config.yaml 기준)
 _LSTM_CFG = dict(
-    input_size    = 42,    # X_seq.shape[2]
+    input_size    = 41,    # X_seq.shape[2] — padding_mask 제거 후 42 → 41
     hidden_size   = 128,
     num_layers    = 2,
     dropout       = 0.3,
@@ -48,12 +51,12 @@ _LSTM_CFG = dict(
 )
 
 # ── 피처 정의 ──────────────────────────────────────────────────────────────
-# config.yaml features.timeseries 순서와 동일 (42개)
+# config.yaml features.timeseries 순서와 동일 (41개, padding_mask 제거)
 TS_FEATURES = [
     "hours_from_onset",
     "lactate", "creatinine", "bilirubin_total", "wbc", "rdw", "map",
     "map_mask", "creatinine_mask", "wbc_mask", "rdw_mask", "aptt_mask",
-    "lactate_mask", "bilirubin_total_mask", "padding_mask",
+    "lactate_mask", "bilirubin_total_mask",
     "pf_ratio",
     "map_last", "map_trend", "aptt_last", "aptt_trend",
     "lactate_last", "lactate_trend", "creatinine_last", "creatinine_trend",
@@ -273,9 +276,6 @@ def _add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     df["lactate_mask"]         = df["lactate"].isna().astype(float)
     df["bilirubin_total_mask"] = df["bilirubin_total"].isna().astype(float)
 
-    # padding_mask: 모든 원시 vital/lab 값이 누락된 슬롯
-    df["padding_mask"] = df[_RAW_COLS].isna().all(axis=1).astype(float)
-
     # NaN → 0 (마스크로 표시됨)
     for col in _RAW_COLS:
         df[col] = df[col].fillna(0.0)
@@ -314,11 +314,11 @@ def _add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _build_x_seq(df: pd.DataFrame, scaler_bundle: dict) -> torch.Tensor:
-    """48 × 42 배열 → scaler 적용 → (1, 48, 42) 텐서.
+    """48 × 41 배열 → scaler 적용 → (1, 48, 41) 텐서.
 
     mask 피처(인덱스 dl_cont_idx 외)는 스케일링에서 제외됩니다.
     """
-    X = df[TS_FEATURES].values.astype(np.float32)   # (48, 42)
+    X = df[TS_FEATURES].values.astype(np.float32)   # (48, 41)
 
     scaler_dl   = scaler_bundle["scaler_dl"]
     cont_idx    = scaler_bundle["dl_cont_idx"]       # 연속형 피처 인덱스 목록
@@ -326,7 +326,7 @@ def _build_x_seq(df: pd.DataFrame, scaler_bundle: dict) -> torch.Tensor:
     X[:, cont_idx] = scaler_dl.transform(X[:, cont_idx]).astype(np.float32)
     np.nan_to_num(X, nan=0.0, copy=False)
 
-    return torch.tensor(X).unsqueeze(0).to(device)   # (1, 48, 42)
+    return torch.tensor(X).unsqueeze(0).to(device)   # (1, 48, 41)
 
 
 def _build_x_xgb(
@@ -334,7 +334,7 @@ def _build_x_xgb(
     patient_meta: dict,
     scaler_bundle: dict,
 ) -> np.ndarray:
-    """static + ts 집계 → XGB 입력 벡터 (1, 179) + scaler 적용."""
+    """static + ts 집계 → XGB 입력 벡터 (1, 173) + scaler 적용."""
 
     # static 피처
     static = {
@@ -352,7 +352,7 @@ def _build_x_xgb(
 
     # ts 집계 (48 스텝 × {mean, std, min, max})
     ts_df   = df[TS_FEATURES]
-    agg_df  = ts_df.agg(["mean", "std", "min", "max"])   # (4, 42)
+    agg_df  = ts_df.agg(["mean", "std", "min", "max"])   # (4, 41)
     ts_agg  = {
         f"{feat}_{stat}": float(agg_df.loc[stat, feat])
         for feat in TS_FEATURES
@@ -380,7 +380,7 @@ def _build_x_xgb(
     x_raw[:, scale_idx] = scaler_xgb.transform(x_scale).astype(np.float32)
     np.nan_to_num(x_raw, nan=0.0, copy=False)
 
-    return x_raw   # (1, 179)
+    return x_raw   # (1, 173)
 
 
 # ── 메인 추론 함수 ─────────────────────────────────────────────────────────
@@ -426,8 +426,8 @@ def predict_sic(vital_df: pd.DataFrame, lab_df: pd.DataFrame, patient_meta: dict
     df = _build_raw_timeseries(vital_df, lab_df, onset)
     df = _add_derived_features(df)
 
-    x_seq = _build_x_seq(df, scaler_bundle)           # (1, 48, 42) tensor
-    x_xgb = _build_x_xgb(df, patient_meta, scaler_bundle)  # (1, 179) ndarray
+    x_seq = _build_x_seq(df, scaler_bundle)           # (1, 48, 41) tensor
+    x_xgb = _build_x_xgb(df, patient_meta, scaler_bundle)  # (1, 173) ndarray
 
     # ── LSTM 앙상블 예측 (5-fold 평균) ───────────────────────────────────
     p_lstm = 0.0

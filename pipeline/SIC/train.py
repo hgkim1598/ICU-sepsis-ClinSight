@@ -2,8 +2,9 @@
 SIC 모델 학습 스크립트 — 5-fold OOF Stacking
 ─────────────────────────────────────────────────────────────────────────────
 데이터:
-  data/dataset/dl/{train,val}.pkl          — X_seq (N, 48, 42), X_static, y
-  data/dataset/xgb/{train,val}.parquet     — 집계 피처 (N, 179+)
+  data/dataset/dl/{train,val}.pkl          — X_seq (N, 48, 41), X_static, y
+                                             (padding_mask 제거 후 42 → 41)
+  data/dataset/xgb/{train,val}.parquet     — 집계 피처 (N, 173+)
   data/dataset/scaler.pkl                  — StandardScaler 번들
 
 출력 (--output-dir, 기본 ./checkpoints):

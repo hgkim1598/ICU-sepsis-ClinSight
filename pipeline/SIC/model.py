@@ -4,11 +4,13 @@ SIC (Sepsis-Induced Coagulopathy) 예측 모델 정의
 아키텍처 : BiLSTM + XGBoost → Stacking Logistic Regression (5-fold OOF)
 
   Base 1 — LSTMClassifier (bidirectional)
-            입력: X_seq  (N, 48, 42)  — 시계열 피처 42개 × 48 timestep
+            입력: X_seq  (N, 48, 41)  — 시계열 피처 41개 × 48 timestep
+                  (padding_mask 제거 후 42 → 41)
             저장: checkpoints/fold_{k}/best_model.pt
 
   Base 2 — XGBClassifier
-            입력: X_xgb  (N, 179)    — 정적 9개 + 시계열 집계 170개
+            입력: X_xgb  (N, 173)    — 정적 9개 + 시계열 집계 164개
+                  (padding_mask × 4 agg 제거 후 179 → 173)
             저장: checkpoints/fold_{k}/model.json
 
   Meta   — LogisticRegression
@@ -72,7 +74,7 @@ def build_lstm(input_size: int) -> LSTMClassifier:
     """config.yaml lstm 섹션 기준으로 LSTMClassifier 를 생성합니다.
 
     Args:
-        input_size: 시계열 피처 수 (X_seq.shape[2], 통상 42)
+        input_size: 시계열 피처 수 (X_seq.shape[2], 통상 41)
 
     Returns:
         LSTMClassifier 인스턴스
