@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from mortality.predict import predict_mortality
 from ards.ards_predict import predict_ards
-
+from sic.sic_predict import predict_sic
 from mortality.predict import predict_mortality
 
 app = FastAPI(
@@ -79,11 +79,13 @@ def get_patient_data(patient_id: str):
 @app.post("/predict/{patient_id}")
 def predict(patient_id: str):
     meta, vital_ts, lab_df = _load_patient(patient_id)
-    
+
     mortality_result = predict_mortality(vital_ts, lab_df, meta, patient_id=patient_id)
     ards_result      = predict_ards(vital_ts, lab_df, meta)
+    sic_result       = predict_sic(vital_ts, lab_df, meta)
 
     return {
         **mortality_result,
         **ards_result,
+        **sic_result,
     }

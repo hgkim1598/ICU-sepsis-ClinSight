@@ -33,9 +33,14 @@ FFILL_LIMITS = {
 
 # ── 시계열 모델 입력 컬럼 (원값 + mask, label leakage 제거 후) ─
 TS_VALUE_COLS = [
-    'map', 'creatinine', 'wbc', 'rdw', 'aptt', 'lactate', 'bilirubin_total', 'pf_ratio'
+    'hours_from_onset', 'lactate', 'creatinine', 'bilirubin_total',
+    'wbc', 'rdw', 'map', 'map_mask', 'creatinine_mask', 'wbc_mask',
+    'rdw_mask', 'aptt_mask', 'lactate_mask', 'bilirubin_total_mask', 'pf_ratio'
 ]
-TS_MASK_COLS = [f'{c}_mask' for c in ['map', 'creatinine', 'wbc', 'rdw', 'aptt', 'lactate', 'bilirubin_total']]
+
+INPUT_DIM = 15
+
+
 
 # ── 파생 피처 ─────────────────────────────────────────────────
 TS_DERIVED_COLS = [
@@ -54,4 +59,3 @@ TS_DERIVED_COLS = [
 ]
 
 # BiLSTM 입력 채널 수 (value + mask + derived)
-INPUT_DIM = len(TS_VALUE_COLS) + len(TS_MASK_COLS) + len(TS_DERIVED_COLS)

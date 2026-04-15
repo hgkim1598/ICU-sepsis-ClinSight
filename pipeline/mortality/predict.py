@@ -12,6 +12,49 @@ from loader import get_models
 from preprocess import preprocess_timeseries, preprocess_static
 from history import load_latest, save_result, compute_changes
 
+CLINICAL_REFERENCE = {
+    'ventilation': {
+        'unit': 'binary',
+        'note': '0=미사용, 1=기계환기 중'
+    },
+    'norepinephrine': {
+        'unit': 'mcg/kg/min',
+        'low_dose': '0.01–0.1',
+        'high_dose': '>0.25',
+        'refractory_threshold': '>0.5',
+        'note': 'Surviving Sepsis Campaign 1차 승압제. >0.5 mcg/kg/min은 불응성 쇼크 기준'
+    },
+    'dopamine': {
+        'unit': 'mcg/kg/min',
+        'low_dose': '1–5 (신장 보호)',
+        'high_dose': '>10',
+        'note': 'norepinephrine 대비 부정맥 위험 높음. 현재 패혈증 가이드라인에서 1차제 비권고'
+    },
+    'dobutamine': {
+        'unit': 'mcg/kg/min',
+        'usual_range': '2–20',
+        'note': '심근 수축력 저하 시 사용. norepinephrine과 병용 가능'
+    },
+    'epinephrine': {
+        'unit': 'mcg/kg/min',
+        'usual_range': '0.01–0.5',
+        'refractory_threshold': '>0.5',
+        'note': '불응성 쇼크 구제 목적. 젖산 청소율 지연 유발 가능'
+    },
+}
+
+
+
+
+def _last_val(df, col):
+    if col not in df.columns:
+        return None
+    s = df[col].dropna()
+    return round(float(s.iloc[-1]), 4) if len(s) > 0 else None
+
+
+
+
 def _safe_float(val):
     if val is None:
         return None
@@ -71,12 +114,25 @@ def predict_mortality(
         key=lambda x: abs(x['shap_value']),
         reverse=True
     )[:3]
+
+
+   
+    clinical_indicators = {
+    feat: {
+        'value':     _last_val(vital_ts if feat == 'ventilation' else lab_df, feat),
+        'reference': CLINICAL_REFERENCE.get(feat, {}),
+    }
+    for feat in ['ventilation', 'norepinephrine', 'dopamine', 'dobutamine', 'epinephrine']
+      } 
+        
+    
     result = {
         'mortality': {
             'probability':    round(prob_final, 4),
             'prediction':     int(prob_final >= THRESHOLD),
             'threshold':      THRESHOLD,
             'inference_time': datetime.now(timezone.utc).isoformat(),
+            'clinical_indicators': clinical_indicators,
             'data_quality': {
                 'n_vital_slots':      n_vital_slots,
                 'n_lab_measurements': n_lab_measurements,
