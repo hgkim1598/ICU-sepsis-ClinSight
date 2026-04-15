@@ -66,7 +66,11 @@ def predict_mortality(
             'change': _safe_float(ch.get('change')),
             'change_direction': ch.get('change_direction', 'unknown'),
         })
-
+    top_features = sorted(
+        [f for f in feature_values if f['shap_value'] is not None],
+        key=lambda x: abs(x['shap_value']),
+        reverse=True
+    )[:3]
     result = {
         'mortality': {
             'probability':    round(prob_final, 4),
@@ -79,6 +83,7 @@ def predict_mortality(
                 'is_reliable':        n_vital_slots >= 6,
             },
             'feature_values': feature_values,
+             'top_features':   top_features,
         }
     }
 
