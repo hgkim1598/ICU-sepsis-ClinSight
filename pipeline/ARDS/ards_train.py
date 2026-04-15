@@ -19,7 +19,7 @@ from sklearn.metrics import (
     confusion_matrix, f1_score, roc_auc_score,
 )
 
-from model import build_xgb_model, calibrate_model
+from pipeline.ards.ards_model import build_xgb_model, calibrate_model
 
 ARTIFACT_FILENAME = "artifact__v6_master_win24_h48_conservative__XGBoost__full.joblib"
 

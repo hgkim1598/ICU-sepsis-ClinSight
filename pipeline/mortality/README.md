@@ -18,6 +18,10 @@ pip install -r requirements.txt
 
 ## 빠른 실행 (더미 데이터로 테스트)
 
+<<<<<<< HEAD
+### 학습 g
+=======
+>>>>>>> origin/modeling-hyogyung
 ```bash
 python predict.py
 ```
