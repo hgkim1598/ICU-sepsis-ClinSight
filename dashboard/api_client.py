@@ -89,7 +89,7 @@ MODEL_KR_NAME = {
     "Mortality": "사망 위험도",
     "ARDS": "급성호흡곤란 (ARDS)",
     "AKI": "급성신손상 (AKI)",
-    "SIC": "파종혈관내응고 (DIC)",
+    "SIC": "패혈증 유발 응고장애 (SIC)",
 }
 
 MOCK_DASHBOARD_DATA: Dict[str, Any] = {
