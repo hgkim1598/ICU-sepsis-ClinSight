@@ -17,7 +17,7 @@ mortality/
 
 ## 실행 방법
 
-### 학습
+### 학습 g
 ```bash
 python train.py
 ```
