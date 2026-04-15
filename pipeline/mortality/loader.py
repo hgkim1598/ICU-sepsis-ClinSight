@@ -1,3 +1,5 @@
+import os
+import tempfile
 import boto3
 import joblib
 import torch
@@ -8,6 +10,9 @@ from config import S3_BUCKET, MODEL_PREFIX, USE_S3, LOCAL_MODEL_PATH
 from model import BiLSTM
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+TMP_XGB = os.path.join(tempfile.gettempdir(), 'xgb_stacking.json')
+TMP_LR  = os.path.join(tempfile.gettempdir(), 'stacking_lr_oof.pkl')
 
 _bilstm, _clf_xgb, _lr = None, None, None
 
@@ -20,26 +25,26 @@ def _load_models():
         state = torch.load(BytesIO(obj['Body'].read()), map_location=device)
 
         obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/xgb_stacking.json')
-        with open('/tmp/xgb_stacking.json', 'wb') as f:
+        with open(TMP_XGB, 'wb') as f:
             f.write(obj['Body'].read())
 
         obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/OOF/stacking_lr_oof.pkl')
-        with open('/tmp/stacking_lr_oof.pkl', 'wb') as f:
+        with open(TMP_LR, 'wb') as f:
             f.write(obj['Body'].read())
     else:
         import shutil
         state = torch.load(f'{LOCAL_MODEL_PATH}/bilstm_best.pt', map_location=device)
-        shutil.copy(f'{LOCAL_MODEL_PATH}/xgb_stacking.json',       '/tmp/xgb_stacking.json')
-        shutil.copy(f'{LOCAL_MODEL_PATH}/OOF/stacking_lr_oof.pkl', '/tmp/stacking_lr_oof.pkl')
+        shutil.copy(f'{LOCAL_MODEL_PATH}/xgb_stacking.json',       TMP_XGB)
+        shutil.copy(f'{LOCAL_MODEL_PATH}/OOF/stacking_lr_oof.pkl', TMP_LR)
 
     bilstm = BiLSTM().to(device)
     bilstm.load_state_dict(state)
     bilstm.eval()
 
     clf_xgb = xgb.XGBClassifier()
-    clf_xgb.load_model('/tmp/xgb_stacking.json')
+    clf_xgb.load_model(TMP_XGB)
 
-    lr = joblib.load('/tmp/stacking_lr_oof.pkl')
+    lr = joblib.load(TMP_LR)
 
     return bilstm, clf_xgb, lr
 

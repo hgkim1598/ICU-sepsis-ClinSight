@@ -13,6 +13,7 @@ from api_client import (
     fetch_dashboard_data,
     fetch_patient_data,
     fetch_patients,
+    fetch_predictions,
     get_feature_display_name,
 )
 
@@ -897,9 +898,14 @@ def inject_styles() -> None:
 # ─────────────────────────────────────────────────────────────
 # Chart / HTML builders
 # ─────────────────────────────────────────────────────────────
-def build_summary_donut(probability: float) -> go.Figure:
-    """Compact donut for summary cards."""
-    _, color, _ = _risk(probability)
+def build_summary_donut(probability: float, is_api: bool = True) -> go.Figure:
+    """Compact donut for summary cards. is_api=False면 회색 톤."""
+    if is_api:
+        _, color, _ = _risk(probability)
+        text_color = T_PRIMARY
+    else:
+        color = "#888888"
+        text_color = "#888888"
     v = max(0.0, min(probability, 1.0))
 
     fig = go.Figure(data=[go.Pie(
@@ -922,33 +928,48 @@ def build_summary_donut(probability: float) -> go.Figure:
                 text=f"<b>{v * 100:.1f}%</b>",
                 x=0.5, y=0.5,
                 showarrow=False,
-                font=dict(size=20, color=T_PRIMARY),
+                font=dict(size=20, color=text_color),
             ),
         ],
     )
     return fig
 
 
-def _shap_bars_html(shap_values: list) -> str:
-    if not shap_values:
+def _shap_bars_html(top_features: list, is_api: bool = True) -> str:
+    """
+    SHAP 기여도만 표시 (피처명 + 바). raw_value/unit/change/is_imputed는 여기서 제외 —
+    SHAP은 '이 피처가 예측에 얼마나 기여했는가'만 보여주는 영역.
+    is_api=False면 전체 회색 톤.
+    """
+    if not top_features:
         return f'<div class="desc-text" style="color:{T_MUTED};">기여 요인 정보가 없습니다.</div>'
 
-    top3 = shap_values[:3]
-    max_abs = max(abs(x["value"]) for x in top3) or 1.0
+    top3 = top_features[:3]
+    vals = [float(x.get("shap_value", x.get("value", 0.0))) for x in top3]
+    max_abs = max(abs(v) for v in vals) or 1.0
+
+    gray = "#888888"
+    gray_bar = "#b0b0b0"
 
     rows = ""
-    for item in top3:
+    for item, val in zip(top3, vals):
         feat = str(item.get("feature", ""))
-        val = float(item.get("value", 0.0))
         name = get_feature_display_name(feat)
         pct = int(abs(val) / max_abs * 100)
-        color = SHAP_POS if val >= 0 else SHAP_NEG
+
+        if is_api:
+            bar_color = SHAP_POS if val >= 0 else SHAP_NEG
+            name_color = T_PRIMARY
+        else:
+            bar_color = gray_bar
+            name_color = gray
 
         rows += (
             f'<div class="shap-item">'
-            f'<div class="shap-name">{html.escape(name)}</div>'
+            f'<div class="shap-name" style="color:{name_color};">'
+            f'{html.escape(name)}</div>'
             f'<div class="shap-track">'
-            f'<div class="shap-fill" style="width:{pct}%;background:{color};"></div>'
+            f'<div class="shap-fill" style="width:{pct}%;background:{bar_color};"></div>'
             f'</div>'
             f'</div>'
         )
@@ -956,9 +977,15 @@ def _shap_bars_html(shap_values: list) -> str:
 
 
 def _feature_table_html(top_feature_values: list) -> str:
+    """
+    핵심 지표 측정값 — 모델 학습에서 의도적으로 제외한 임상 지표.
+    현재 API에 이 값들이 내려오지 않으므로 mock 데이터를 전체 회색으로 표시.
+    별도 API 필드 추가 시 이 함수에 연결 예정.
+    """
     if not top_feature_values:
         return ""
 
+    gray = "#888888"
     rows = ""
     for fv in top_feature_values:
         raw = fv.get("value")
@@ -978,19 +1005,21 @@ def _feature_table_html(top_feature_values: list) -> str:
         is_anom = fv.get("is_abnormal", False)
         direction = fv.get("direction")
         if is_anom and direction == "high":
-            val_class, indicator = "fv-cell anom-hi", " ↑"
+            indicator = " ↑"
         elif is_anom and direction == "low":
-            val_class, indicator = "fv-cell anom-lo", " ↓"
+            indicator = " ↓"
         else:
-            val_class, indicator = "fv-cell val-ok", ""
+            indicator = ""
 
         range_str = html.escape(fv.get("normal_range_str") or "–")
 
         rows += (
             f"<tr>"
-            f'<td class="fn-cell">{html.escape(fv.get("display_name", "-"))}</td>'
-            f'<td class="{val_class}">{html.escape(display_val)}{indicator}</td>'
-            f'<td class="fr-cell">{range_str}</td>'
+            f'<td class="fn-cell" style="color:{gray};">'
+            f'{html.escape(fv.get("display_name", "-"))}</td>'
+            f'<td class="fv-cell" style="color:{gray};">'
+            f'{html.escape(display_val)}{indicator}</td>'
+            f'<td class="fr-cell" style="color:{gray};">{range_str}</td>'
             f"</tr>"
         )
 
@@ -1120,7 +1149,17 @@ def render_summary_cards(data: dict) -> None:
     for i, model_name in enumerate(MODEL_ORDER):
         model_result = data.get("models", {}).get(model_name, {})
         prob = float(model_result.get("probability", 0.0))
-        label, color, bg_color = _risk(prob)
+        is_api = bool(model_result.get("has_api_data"))
+        dq = model_result.get("data_quality", {}) or {}
+        is_reliable = dq.get("is_reliable", True)
+
+        if is_api:
+            label, color, bg_color = _risk(prob)
+        else:
+            label = "Mock"
+            color = "#666666"
+            bg_color = "#f1f5f9"
+
         kr_name = MODEL_KR_NAME.get(model_name, model_name)
         is_selected = (selected == model_name)
 
@@ -1134,16 +1173,24 @@ def render_summary_cards(data: dict) -> None:
             )
 
             st.plotly_chart(
-                build_summary_donut(prob),
+                build_summary_donut(prob, is_api=is_api),
                 use_container_width=True,
                 config={"displayModeBar": False},
                 key=f"summary_donut_{model_name}",
             )
 
+            badges = (
+                f'<span class="sc-risk-badge" '
+                f'style="color:{color};background:{bg_color};">{label}</span>'
+            )
+            if is_api and not is_reliable:
+                badges += (
+                    ' <span class="sc-risk-badge" '
+                    'style="color:#b45309;background:#fef3c7;'
+                    'margin-left:4px;">⚠ 데이터 부족</span>'
+                )
             st.markdown(
-                f'<div class="sc-meta-row">'
-                f'<span class="sc-risk-badge" style="color:{color};background:{bg_color};">{label}</span>'
-                f'</div>',
+                f'<div class="sc-meta-row">{badges}</div>',
                 unsafe_allow_html=True,
             )
 
@@ -1162,7 +1209,16 @@ def render_detail_panel(data: dict) -> None:
     model_result = data.get("models", {}).get(selected, {})
     kr_name = MODEL_KR_NAME.get(selected, selected)
     prob = float(model_result.get("probability", 0.0))
-    label, color, bg_color = _risk(prob)
+    is_api = bool(model_result.get("has_api_data"))
+    dq = model_result.get("data_quality", {}) or {}
+    is_reliable = dq.get("is_reliable", True)
+
+    if is_api:
+        label, color, bg_color = _risk(prob)
+    else:
+        label = "Mock"
+        color = "#666666"
+        bg_color = "#f1f5f9"
 
     with st.container():
         st.markdown('<div class="detail-panel-anchor"></div>', unsafe_allow_html=True)
@@ -1177,7 +1233,21 @@ def render_detail_panel(data: dict) -> None:
             unsafe_allow_html=True,
         )
 
+        if is_api and not is_reliable:
+            st.markdown(
+                '<div class="desc-box" style="border:1px solid #fcd34d;'
+                'background:#fffbeb;margin-bottom:0.8rem;">'
+                '<div class="desc-text" style="color:#b45309;">'
+                '⚠ 측정 데이터가 부족하여 예측 신뢰도가 낮을 수 있습니다.'
+                '</div></div>',
+                unsafe_allow_html=True,
+            )
+
         left, right = st.columns(2, gap="large")
+
+        top_features = model_result.get("top_features", [])
+        # 핵심 지표 테이블은 SHAP과 분리된 영역 — 항상 mock top_feature_values 사용
+        top_feature_values = model_result.get("top_feature_values", [])
 
         with left:
             st.markdown(
@@ -1185,7 +1255,7 @@ def render_detail_panel(data: dict) -> None:
                 unsafe_allow_html=True,
             )
             st.markdown(
-                _shap_bars_html(model_result.get("shap_values", [])),
+                _shap_bars_html(top_features, is_api=is_api),
                 unsafe_allow_html=True,
             )
 
@@ -1195,7 +1265,7 @@ def render_detail_panel(data: dict) -> None:
                 unsafe_allow_html=True,
             )
             st.markdown(
-                _feature_table_html(model_result.get("top_feature_values", [])),
+                _feature_table_html(top_feature_values),
                 unsafe_allow_html=True,
             )
 
@@ -1204,8 +1274,10 @@ def render_detail_panel(data: dict) -> None:
                 unsafe_allow_html=True,
             )
             desc = html.escape(str(model_result.get("description", "-")))
+            desc_color = T_MUTED if not is_api else T_SECONDARY
             st.markdown(
-                f'<div class="desc-box"><div class="desc-text">{desc}</div></div>',
+                f'<div class="desc-box"><div class="desc-text" '
+                f'style="color:{desc_color};">{desc}</div></div>',
                 unsafe_allow_html=True,
             )
 
@@ -1213,6 +1285,12 @@ def render_detail_panel(data: dict) -> None:
 # ─────────────────────────────────────────────────────────────
 # Sidebar overlay + refresh wiring (신규 추가)
 # ─────────────────────────────────────────────────────────────
+def _pick_patient(pid: str) -> None:
+    """사이드바 숨김 버튼의 on_click 콜백. session_state를 갱신하고 Streamlit이 auto-rerun."""
+    st.session_state["patient_id"] = pid
+    print(f"[DEBUG] _pick_patient → patient_id={pid}")
+
+
 def _render_patient_items_html(patient_ids: list[str], current_id: str) -> str:
     items = []
     for idx, pid in enumerate(patient_ids):
@@ -1277,6 +1355,22 @@ def render_sidebar_and_controls(
             # 버튼 클릭 자체가 rerun을 유발하며 fetch_dashboard_data도 재호출됨
             pass
 
+    # 환자 선택 trigger (per-patient 숨김 버튼)
+    # JS 클릭 시 해당 pid의 버튼을 click() → on_click 콜백이 session_state를 갱신
+    # → Streamlit이 자동 rerun → 새 patient_id로 API 호출
+    with st.container():
+        st.markdown(
+            '<div class="cs-pick-trigger-anchor"></div>',
+            unsafe_allow_html=True,
+        )
+        for pid in patient_ids:
+            st.button(
+                f"__pick__{pid}",
+                key=f"_cs_pick_{pid}",
+                on_click=_pick_patient,
+                args=(pid,),
+            )
+
     # 상호작용 JS 주입 (height=0 iframe)
     components.html(
         """
@@ -1320,9 +1414,9 @@ def render_sidebar_and_controls(
             }
             waitFor('[data-testid="stMainBlockContainer"]', lockMainContainerHeight);
 
-            // 숨겨진 refresh trigger 컨테이너는 JS로 가장 가까운 block만 off-screen 처리
-            function hideTriggerContainer() {
-                const anchor = pageDoc.querySelector('.cs-refresh-trigger-anchor');
+            // 숨겨진 trigger 컨테이너를 off-screen 처리 (refresh + 환자 선택 picker)
+            function hideAnchorContainer(anchorSelector) {
+                const anchor = pageDoc.querySelector(anchorSelector);
                 if (!anchor) return;
                 const container = anchor.closest('[data-testid="stVerticalBlock"]');
                 if (container && !container.dataset.csHidden) {
@@ -1335,25 +1429,45 @@ def render_sidebar_and_controls(
                     container.style.overflow = 'hidden';
                 }
             }
-            hideTriggerContainer();
-            waitFor('.cs-refresh-trigger-anchor', hideTriggerContainer);
+            function hideRefreshTriggerContainer() {
+                hideAnchorContainer('.cs-refresh-trigger-anchor');
+            }
+            function hidePickTriggerContainer() {
+                hideAnchorContainer('.cs-pick-trigger-anchor');
+            }
+            hideRefreshTriggerContainer();
+            hidePickTriggerContainer();
+            waitFor('.cs-refresh-trigger-anchor', hideRefreshTriggerContainer);
+            waitFor('.cs-pick-trigger-anchor', hidePickTriggerContainer);
 
             waitFor('#cs-hamburger', function() {
                 const body = pageDoc.body;
+
+                // ── 리런 시 body에 누적된 stale hamburger/sidebar 제거 ──
+                // Streamlit이 markdown 컨테이너를 다시 렌더하면 새 DOM이 생성되는데,
+                // 이전 실행에서 body로 이식한 것들은 그대로 남아있어 ID가 중복됨.
+                // getElementById가 먼저 만나는 stale 요소를 집어버리면 클릭 시
+                // 이전 render의 data-pid가 발화되어 환자 전환이 안 되는 버그가 생김.
+                pageDoc.querySelectorAll('body > #cs-hamburger').forEach(function(el) {
+                    el.remove();
+                });
+                pageDoc.querySelectorAll('body > #cs-sidebar').forEach(function(el) {
+                    el.remove();
+                });
+
                 const hamburger = pageDoc.getElementById('cs-hamburger');
                 const sidebar = pageDoc.getElementById('cs-sidebar');
+                if (!hamburger || !sidebar) return;
 
-                // ── body 직속으로 이식 (Streamlit 컨테이너 종속 해제) ──
-                // 부모 stVerticalBlock의 height:auto가 hover로 흔들려도
-                // 이식된 fixed 요소는 영향을 받지 않음.
-                if (hamburger && hamburger.parentElement !== body) {
+                // ── 이번 render에서 생성된 fresh 요소를 body 직속으로 이식 ──
+                if (hamburger.parentElement !== body) {
                     const originalContainer = hamburger.closest(
                         '[data-testid="stElementContainer"]'
                     );
                     if (originalContainer) originalContainer.style.display = 'none';
                     body.appendChild(hamburger);
                 }
-                if (sidebar && sidebar.parentElement !== body) {
+                if (sidebar.parentElement !== body) {
                     body.appendChild(sidebar);
                 }
 
@@ -1361,10 +1475,8 @@ def render_sidebar_and_controls(
                 const listEl = pageDoc.getElementById('cs-patient-list');
                 const emptyEl = pageDoc.getElementById('cs-empty');
                 const pagerEl = pageDoc.getElementById('cs-pagination');
-                if (!hamburger || !sidebar) return;
 
-                // 중복 바인딩 방지
-                if (hamburger.dataset.csBound === '1') return;
+                // fresh 요소이므로 csBound는 항상 false → 매 리런마다 새로 바인딩
                 hamburger.dataset.csBound = '1';
 
                 const items = Array.prototype.slice.call(
@@ -1389,15 +1501,27 @@ def render_sidebar_and_controls(
                 });
                 // 사이드바 내부 클릭이 document로 버블링되어 즉시 닫히지 않도록 차단
                 sidebar.addEventListener('click', function(e) { e.stopPropagation(); });
-                // 사이드바/햄버거 바깥 영역 클릭 시 닫힘 (배경 없이)
-                pageDoc.addEventListener('click', function(e) {
-                    if (!body.classList.contains('cs-open')) return;
-                    if (sidebar.contains(e.target) || hamburger.contains(e.target)) return;
-                    closeSidebar();
-                });
-                pageDoc.addEventListener('keydown', function(e) {
-                    if (e.key === 'Escape') closeSidebar();
-                });
+
+                // pageDoc 레벨 리스너는 매 리런마다 중복 등록되지 않도록 1회만 바인딩.
+                // 핸들러는 항상 최신 sidebar/hamburger를 ID로 다시 조회.
+                if (!pageWin.__csGlobalDocListeners) {
+                    pageWin.__csGlobalDocListeners = true;
+                    pageDoc.addEventListener('click', function(e) {
+                        if (!body.classList.contains('cs-open')) return;
+                        const sb = pageDoc.getElementById('cs-sidebar');
+                        const hb = pageDoc.getElementById('cs-hamburger');
+                        if (sb && sb.contains(e.target)) return;
+                        if (hb && hb.contains(e.target)) return;
+                        body.classList.remove('cs-open');
+                        if (sb) sb.setAttribute('aria-hidden', 'true');
+                    });
+                    pageDoc.addEventListener('keydown', function(e) {
+                        if (e.key !== 'Escape') return;
+                        body.classList.remove('cs-open');
+                        const sb = pageDoc.getElementById('cs-sidebar');
+                        if (sb) sb.setAttribute('aria-hidden', 'true');
+                    });
+                }
 
                 function renderPage() {
                     const total = filteredItems.length;
@@ -1474,7 +1598,24 @@ def render_sidebar_and_controls(
                 }
                 searchInput.addEventListener('input', applyFilter);
 
-                // 환자 항목 클릭 — URL query param에 patient_id 설정 후 rerun
+                // 환자 항목 클릭 — pid별 숨김 Streamlit 버튼을 click()
+                // → Streamlit 네이티브 on_click 콜백이 session_state['patient_id']를 갱신
+                // → Streamlit이 자동 rerun하여 새 환자 데이터로 화면 갱신
+                function findPickButton(pid) {
+                    const anchor = pageDoc.querySelector('.cs-pick-trigger-anchor');
+                    if (!anchor) return null;
+                    const container = anchor.closest('[data-testid="stVerticalBlock"]');
+                    if (!container) return null;
+                    const btns = container.querySelectorAll('button');
+                    const targetLabel = '__pick__' + pid;
+                    for (let i = 0; i < btns.length; i++) {
+                        if ((btns[i].textContent || '').trim() === targetLabel) {
+                            return btns[i];
+                        }
+                    }
+                    return null;
+                }
+
                 items.forEach(function(el) {
                     el.addEventListener('click', function() {
                         items.forEach(function(x) { x.classList.remove('is-selected'); });
@@ -1482,19 +1623,13 @@ def render_sidebar_and_controls(
 
                         const pid = el.getAttribute('data-pid') || '';
                         if (!pid) return;
-                        try {
-                            const url = new pageWin.URL(pageWin.location.href);
-                            url.searchParams.set('patient_id', pid);
-                            pageWin.history.replaceState({}, '', url);
-                        } catch (e) { /* URL 조작 실패 시 무시 */ }
 
-                        // 숨겨진 Streamlit refresh 버튼을 클릭 → 서버 rerun
-                        const anchor = pageDoc.querySelector('.cs-refresh-trigger-anchor');
-                        if (!anchor) return;
-                        const container = anchor.closest('[data-testid="stVerticalBlock"]');
-                        if (!container) return;
-                        const hiddenBtn = container.querySelector('button');
-                        if (hiddenBtn) hiddenBtn.click();
+                        const pickBtn = findPickButton(pid);
+                        if (pickBtn) {
+                            pickBtn.click();
+                        } else {
+                            console.warn('[ClinSight] pick button not found for pid=' + pid);
+                        }
                     });
                 });
 
@@ -1565,21 +1700,48 @@ def main() -> None:
     if "selected_model" not in st.session_state:
         st.session_state["selected_model"] = MODEL_ORDER[0]
     if "use_mock_data" not in st.session_state:
-        st.session_state["use_mock_data"] = True
+        st.session_state["use_mock_data"] = False
+    if "prediction_cache" not in st.session_state:
+        st.session_state["prediction_cache"] = {}
 
-    # 환자 목록 조회 + 선택 환자 결정 (URL query param 우선)
+    # 환자 목록 조회
     try:
         patient_ids = fetch_patients()
     except Exception:
         patient_ids = []
 
-    qp_pid = st.query_params.get("patient_id")
-    selected_pid = qp_pid or (patient_ids[0] if patient_ids else None)
+    # patient_id source of truth = st.session_state["patient_id"]
+    # 최초 진입 시 URL query_params 또는 목록 첫 환자로 초기화.
+    if "patient_id" not in st.session_state:
+        qp_pid = st.query_params.get("patient_id")
+        st.session_state["patient_id"] = qp_pid or (
+            patient_ids[0] if patient_ids else None
+        )
+
+    selected_pid = st.session_state["patient_id"]
+
+    # URL도 동기화 (공유용, rerun 유발하지 않음)
+    if selected_pid and st.query_params.get("patient_id") != selected_pid:
+        st.query_params["patient_id"] = selected_pid
+
+    print(f"[DEBUG] selected_pid={selected_pid}")
+
+    # 예측 API 호출 (환자별 캐시). use_mock_data=True면 호출 생략.
+    predictions = None
+    if selected_pid and not st.session_state["use_mock_data"]:
+        cache = st.session_state["prediction_cache"]
+        if selected_pid not in cache:
+            with st.spinner(f"예측 결과를 불러오는 중... ({selected_pid})"):
+                cache[selected_pid] = fetch_predictions(selected_pid)
+        predictions = cache.get(selected_pid)
+        print(f"[DEBUG] predictions fetched for {selected_pid}: "
+              f"keys={list(predictions.keys()) if predictions else None}")
 
     dashboard_data = fetch_dashboard_data(
         use_mock_override=bool(st.session_state["use_mock_data"]),
         use_mock_on_error=True,
         patient_id=selected_pid,
+        predictions=predictions,
     )
 
     # 환자 기본 정보(API)를 dashboard_data.patient에 overlay
@@ -1613,6 +1775,19 @@ def main() -> None:
 
     # 신규 추가: 좌측 슬라이드 사이드바 (overlay) + 새로고침 버튼 wiring
     render_sidebar_and_controls(dashboard_data, patient_ids, selected_pid)
+
+    # ── Debug: API 응답 전체 보기 (접혀있음) ──
+    with st.expander("🔍 Debug: API Response", expanded=False):
+        st.write(f"**selected_pid:** `{selected_pid}`")
+        st.write(f"**session_state.patient_id:** `{st.session_state.get('patient_id')}`")
+        st.write(f"**query_params:** `{dict(st.query_params)}`")
+        st.markdown("**predictions:**")
+        st.json(predictions if predictions else {"_": "no predictions"})
+        st.markdown("**patient_meta:**")
+        st.json(
+            dashboard_data.get("patient", {}).get("patient_meta", {})
+            or {"_": "no patient_meta"}
+        )
 
 
 if __name__ == "__main__":
