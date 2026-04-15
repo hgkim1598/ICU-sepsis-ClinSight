@@ -13,7 +13,7 @@ import joblib
 import boto3
 from io import BytesIO
 
-from ards.ards_config import S3_BUCKET, MODEL_PREFIX, USE_S3, LOCAL_MODEL_PATH, ARTIFACT_FILENAME
+from ards_config import S3_BUCKET, MODEL_PREFIX, USE_S3, LOCAL_MODEL_PATH, ARTIFACT_FILENAME
 
 
 _artifact = None

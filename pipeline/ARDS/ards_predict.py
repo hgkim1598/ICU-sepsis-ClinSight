@@ -25,9 +25,9 @@ import joblib
 import numpy as np
 import shap
 
-from ards.ards_config import ARTIFACT_FILENAME, FEAT_COLS, WINDOW_H
-from ards.ards_loader import _get_artifact
-from ards.ards_preprocess import preprocess
+from ards_config import ARTIFACT_FILENAME, FEAT_COLS, WINDOW_H
+from ards_loader import _get_artifact
+from ards_preprocess import preprocess
 
 
 # ── 메인 추론 함수 ────────────────────────────────────────────
