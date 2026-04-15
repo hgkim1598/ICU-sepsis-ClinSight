@@ -15,31 +15,28 @@ from history import load_latest, save_result, compute_changes
 CLINICAL_REFERENCE = {
     'ventilation': {
         'unit': 'binary',
-        'note': '0=미사용, 1=기계환기 중'
+        'usual_range': '0=미사용, 1=기계환기 중',
+        'risk_value': None,
     },
     'norepinephrine': {
         'unit': 'mcg/kg/min',
-        'low_dose': '0.01–0.1',
-        'high_dose': '>0.25',
-        'refractory_threshold': '>0.5',
-        'note': 'Surviving Sepsis Campaign 1차 승압제. >0.5 mcg/kg/min은 불응성 쇼크 기준'
+        'usual_range': '0.01–0.25',
+        'risk_value': None,
     },
     'dopamine': {
         'unit': 'mcg/kg/min',
-        'low_dose': '1–5 (신장 보호)',
-        'high_dose': '>10',
-        'note': 'norepinephrine 대비 부정맥 위험 높음. 현재 패혈증 가이드라인에서 1차제 비권고'
+        'usual_range': '1–10',
+        'risk_value': None,
     },
     'dobutamine': {
         'unit': 'mcg/kg/min',
         'usual_range': '2–20',
-        'note': '심근 수축력 저하 시 사용. norepinephrine과 병용 가능'
+        'risk_value': None,
     },
     'epinephrine': {
         'unit': 'mcg/kg/min',
         'usual_range': '0.01–0.5',
-        'refractory_threshold': '>0.5',
-        'note': '불응성 쇼크 구제 목적. 젖산 청소율 지연 유발 가능'
+        'risk_value': None,
     },
 }
 
