@@ -1732,8 +1732,31 @@ def main() -> None:
     if selected_pid and not st.session_state["use_mock_data"]:
         cache = st.session_state["prediction_cache"]
         if selected_pid not in cache:
-            with st.spinner(f"예측 결과를 불러오는 중... ({selected_pid})"):
+            loading_placeholder = st.empty()
+            loading_placeholder.markdown(
+                f"""
+                <div style="position:fixed;top:0;left:0;width:100vw;height:100vh;
+                            display:flex;flex-direction:column;align-items:center;
+                            justify-content:center;background:rgba(255,255,255,0.85);
+                            z-index:99999;">
+                  <div style="width:56px;height:56px;border:5px solid #e5e7eb;
+                              border-top-color:#2563eb;border-radius:50%;
+                              animation:cs-loading-spin 0.9s linear infinite;"></div>
+                  <div style="margin-top:18px;color:#334155;font-size:14px;
+                              font-weight:500;letter-spacing:0.01em;">
+                    예측 결과를 불러오는 중... ({html.escape(str(selected_pid))})
+                  </div>
+                </div>
+                <style>
+                @keyframes cs-loading-spin {{ to {{ transform: rotate(360deg); }} }}
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            try:
                 cache[selected_pid] = fetch_predictions(selected_pid)
+            finally:
+                loading_placeholder.empty()
         predictions = cache.get(selected_pid)
         print(f"[DEBUG] predictions fetched for {selected_pid}: "
               f"keys={list(predictions.keys()) if predictions else None}")
