@@ -12,6 +12,13 @@ from loader import get_models
 from preprocess import preprocess_timeseries, preprocess_static
 from history import load_latest, save_result, compute_changes
 
+def _safe_float(val):
+    if val is None:
+        return None
+    f = float(val)
+    if np.isnan(f) or np.isinf(f):
+        return None
+    return round(f, 4)
 
 def predict_mortality(
     vital_ts,
@@ -52,11 +59,11 @@ def predict_mortality(
         ch      = changes.get(feat, {})
         feature_values.append({
             'feature':          feat,
-            'shap_value':       round(float(shap_values[shap_idx[feat]]), 4),
-            'raw_value':        round(float(raw_val), 4) if raw_val is not None else None,
+            'raw_value':  _safe_float(raw_val),
+            'shap_value': _safe_float(shap_values[shap_idx[feat]]),
             'unit':             FEAT_UNITS.get(feat, ''),
             'is_imputed':       imputed.get(feat, False),
-            'change':           ch.get('change'),
+            'change': _safe_float(ch.get('change')),
             'change_direction': ch.get('change_direction', 'unknown'),
         })
 
