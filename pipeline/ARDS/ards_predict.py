@@ -4,7 +4,9 @@ ARDS 조기예측 추론 모듈
 - 모델: XGBoost (calibrated via Platt Scaling)
 - 대표 조합: master sepsis cohort + 24h window + 48h horizon + conservative feature
 - 입력: onset 이전 24h 내 활력징후 + 혈액검사 + 환자 기본정보
-- 출력: {"ards": {"probability": float, "shap": [{"feature": str, "value": float}]}}
+- 출력: mortality predict.py와 동일 스펙
+        {"ards": {"probability", "prediction", "threshold", "inference_time",
+                  "data_quality", "feature_values", "top_features"}}
 
 변경 이력
 ---------
@@ -20,6 +22,8 @@ v2 (2025-06):
 import sys, os
 ARDS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ARDS_DIR)
+
+from datetime import datetime, timezone
 
 import joblib
 import numpy as np
@@ -52,15 +56,24 @@ def predict_ards(vital_df, lab_df, patient_meta):
     Returns
     -------
     dict :
+        mortality predict.py와 동일한 응답 스펙.
         {
             "ards": {
-                "probability": 0.342,
-                "threshold": 0.30,
-                "prediction": 1,
-                "shap": [
-                    {"feature": "lactate_missing", "value": 0.0821},
+                "probability":    0.342,
+                "prediction":     1,
+                "threshold":      0.30,
+                "inference_time": "2026-04-15T...",
+                "data_quality": {
+                    "n_vital_slots":      int,
+                    "n_lab_measurements": int,
+                    "is_reliable":        bool,
+                },
+                "feature_values": [   # 전체 피처 (43개)
+                    {"feature", "raw_value", "shap_value", "unit",
+                     "is_imputed", "change", "change_direction"},
                     ...
-                ]
+                ],
+                "top_features": [ ... ],   # |shap_value| 기준 상위 3개
             }
         }
     """
@@ -80,21 +93,49 @@ def predict_ards(vital_df, lab_df, patient_meta):
     # SHAP 계산 (base_model 기준 — TreeExplainer 사용)
     explainer = shap.TreeExplainer(base_model)
     shap_values = explainer.shap_values(x)[0]
-    shap_list = sorted(
-        [
-            {"feature": feat, "value": round(float(val), 4)}
-            for feat, val in zip(FEAT_COLS, shap_values)
-        ],
-        key=lambda d: abs(d["value"]),
+
+    # feature_values: mortality 스펙과 동일한 항목 구조 (전체 피처)
+    # - ARDS는 FEAT_UNITS / imputation 플래그 / 이력 변화가 없으므로
+    #   unit="", is_imputed=False, change=None, change_direction="unknown"
+    raw_row = x[0]
+    feature_values = []
+    for i, feat in enumerate(FEAT_COLS):
+        rv = float(raw_row[i])
+        raw_value = round(rv, 4) if np.isfinite(rv) else None
+        feature_values.append({
+            "feature":          feat,
+            "raw_value":        raw_value,
+            "shap_value":       round(float(shap_values[i]), 4),
+            "unit":             "",
+            "is_imputed":       False,
+            "change":           None,
+            "change_direction": "unknown",
+        })
+
+    # top_features: |shap_value| 기준 상위 3개
+    top_features = sorted(
+        feature_values,
+        key=lambda d: abs(d["shap_value"]),
         reverse=True,
-    )
+    )[:3]
+
+    # data_quality: mortality 구조와 동일
+    n_vital_slots      = int(len(vital_df))
+    n_lab_measurements = int(len(lab_df))
 
     return {
         "ards": {
-            "probability": round(prob, 4),
-            "threshold": threshold,
-            "prediction": int(prob >= threshold),
-            "shap": shap_list,
+            "probability":    round(prob, 4),
+            "prediction":     int(prob >= threshold),
+            "threshold":      threshold,
+            "inference_time": datetime.now(timezone.utc).isoformat(),
+            "data_quality": {
+                "n_vital_slots":      n_vital_slots,
+                "n_lab_measurements": n_lab_measurements,
+                "is_reliable":        n_vital_slots >= 6,
+            },
+            "feature_values": feature_values,
+            "top_features":   top_features,
         }
     }
 
