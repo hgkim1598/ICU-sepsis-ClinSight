@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException
 
 
-from mortality.predict import predict_mortality
+from pipeline.mortality.predict import predict_mortality
 
 app = FastAPI(
     title="Sepsis ICU Mortality Prediction API",
