@@ -9,7 +9,10 @@ ARDS 모델 학습 스크립트
 """
 import argparse
 import json
+import sys, os
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import joblib
 import numpy as np
@@ -19,7 +22,7 @@ from sklearn.metrics import (
     confusion_matrix, f1_score, roc_auc_score,
 )
 
-from pipeline.ards.ards_model import build_xgb_model, calibrate_model
+from ards_model import build_xgb_model, calibrate_model
 
 ARTIFACT_FILENAME = "artifact__v6_master_win24_h48_conservative__XGBoost__full.joblib"
 

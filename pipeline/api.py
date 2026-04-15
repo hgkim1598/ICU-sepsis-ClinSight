@@ -5,10 +5,17 @@ import pandas as pd
 from io import BytesIO
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
+<<<<<<< HEAD
 from mortality.predict import predict_mortality
 from ards.ards_predict import predict_ards
 from sic.sic_predict import predict_sic
 from mortality.predict import predict_mortality
+=======
+from pipeline.mortality.predict import predict_mortality
+from pipeline.ARDS.ards_predict import predict_ards
+
+from pipeline.mortality.predict import predict_mortality
+>>>>>>> dev
 
 app = FastAPI(
     title="Sepsis ICU Mortality Prediction API",

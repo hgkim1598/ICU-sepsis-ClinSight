@@ -88,6 +88,38 @@ FEATURE_LABELS: dict[str, str] = {
     # 환자 정보
     "age":                    "나이",
     "gender":                 "성별",
+
+    # ── ARDS 파이프라인 추가 매핑 ──────────────────────────────
+    # 활력징후 (mean/trend 계열 — mortality는 slope 사용, ARDS는 trend 사용)
+    "heart_rate_mean":        "심박수 (평균값)",
+    "heart_rate_trend":       "심박수 (추세)",
+    "resp_rate_mean":         "호흡수 (평균값)",
+    "resp_rate_trend":        "호흡수 (추세)",
+    "spo2_mean":              "산소포화도 (평균값)",
+    "spo2_trend":             "산소포화도 (추세)",
+    "mbp_trend":              "평균동맥압 (추세)",
+    "sbp_trend":              "수축기혈압 (추세)",
+    "temperature_last":       "체온 (최근값)",
+    "temperature_trend":      "체온 (추세)",
+
+    # 혈액가스
+    "lactate_trend":          "젖산 (추세)",
+    "lactate_missing":        "젖산 (결측 여부)",
+    "ph_last":                "pH (최근값)",
+    "ph_min":                 "pH (최솟값)",
+    "ph_trend":               "pH (추세)",
+    "ph_missing":             "pH (결측 여부)",
+    "bicarbonate_trend":      "중탄산염 (추세)",
+    "bicarbonate_missing":    "중탄산염 (결측 여부)",
+
+    # 혈액검사
+    "creatinine_trend":       "크레아티닌 (추세)",
+    "bun_trend":              "BUN (추세)",
+    "wbc_trend":              "백혈구 (추세)",
+    "platelet_trend":         "혈소판 (추세)",
+
+    # 환자 정보
+    "gender_bin":             "성별",
 }
 
 

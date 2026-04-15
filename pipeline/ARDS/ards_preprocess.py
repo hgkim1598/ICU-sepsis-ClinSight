@@ -8,7 +8,7 @@ import pandas as pd
 import sys, os
 ARDS_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ARDS_DIR)
-from ards.ards_config import STAT_RULES, COL_MAP, SOURCE_MAP, FEAT_COLS, BG_COLS, WINDOW_H
+from ards_config import STAT_RULES, COL_MAP, SOURCE_MAP, FEAT_COLS, BG_COLS, WINDOW_H
 
 
 # ── 헬퍼 함수 ─────────────────────────────────────────────────
