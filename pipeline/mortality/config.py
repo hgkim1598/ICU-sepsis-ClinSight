@@ -2,7 +2,7 @@ import os
 
 # ── S3 / 환경 설정 ────────────────────────────────────────────
 S3_BUCKET        = os.getenv('S3_BUCKET', 'say2-1team')
-MODEL_PREFIX     = os.getenv('MODEL_PREFIX', 'Final_model/saved_models')
+MODEL_PREFIX = os.getenv('MODEL_PREFIX', 'pipeline/final_model')
 HISTORY_PREFIX   = 'pipeline/patient_history'
 USE_S3           = os.getenv('USE_S3', 'true').lower() == 'true'
 LOCAL_MODEL_PATH = os.getenv('LOCAL_MODEL_PATH', './models')

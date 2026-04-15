@@ -2,6 +2,9 @@ import boto3
 import joblib
 import torch
 import xgboost as xgb
+import tempfile
+tmp = tempfile.gettempdir()
+
 from io import BytesIO
 
 from config import S3_BUCKET, MODEL_PREFIX, USE_S3, LOCAL_MODEL_PATH
@@ -16,30 +19,30 @@ def _load_models():
     if USE_S3:
         s3 = boto3.client('s3')
 
-        obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/bilstm_best.pt')
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/mortality_bilstm.pt')
         state = torch.load(BytesIO(obj['Body'].read()), map_location=device)
 
-        obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/xgb_stacking.json')
-        with open('/tmp/xgb_stacking.json', 'wb') as f:
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/mortality_xgb.json')
+        with open(os.path.join(tmp, 'mortality_xgb.json'), 'wb') as f:
             f.write(obj['Body'].read())
 
-        obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/OOF/stacking_lr_oof.pkl')
-        with open('/tmp/stacking_lr_oof.pkl', 'wb') as f:
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=f'{MODEL_PREFIX}/mortality_stacking_lr.pkl')
+        with open(os.path.join(tmp, 'mortality_stacking_lr.pkl'), 'wb') as f:
             f.write(obj['Body'].read())
     else:
         import shutil
-        state = torch.load(f'{LOCAL_MODEL_PATH}/bilstm_best.pt', map_location=device)
-        shutil.copy(f'{LOCAL_MODEL_PATH}/xgb_stacking.json',       '/tmp/xgb_stacking.json')
-        shutil.copy(f'{LOCAL_MODEL_PATH}/OOF/stacking_lr_oof.pkl', '/tmp/stacking_lr_oof.pkl')
+        state = torch.load(f'{LOCAL_MODEL_PATH}/mortality_bilstm.pt', map_location=device)
+        shutil.copy(f'{LOCAL_MODEL_PATH}/mortality_xgb.json',       '/tmp/mortality_xgb.json')
+        shutil.copy(f'{LOCAL_MODEL_PATH}/mortality_stacking_lr.pkl', '/tmp/mortality_stacking_lr.pkl')
 
     bilstm = BiLSTM().to(device)
     bilstm.load_state_dict(state)
     bilstm.eval()
 
     clf_xgb = xgb.XGBClassifier()
-    clf_xgb.load_model('/tmp/xgb_stacking.json')
+    clf_xgb.load_model(os.path.join(tmp, 'mortality_xgb.json'))
 
-    lr = joblib.load('/tmp/stacking_lr_oof.pkl')
+    lr = joblib.load(os.path.join(tmp, 'mortality_stacking_lr.pkl'))
 
     return bilstm, clf_xgb, lr
 
