@@ -212,18 +212,30 @@ print(result)
 
 ## 출력 형식
 
+## 출력 형식
+
 ```json
 {
   "mortality": {
     "probability": 0.852,
+    "prediction": 1,
+    "threshold": 0.21,
     "shap": [
-      {"feature": "lactate_last", "value": 0.661},
-      {"feature": "sodium_min",   "value": 0.749},
-      ...
+      {"feature": "lactate_last", "value": 0.661, "unit": "mmol/L"},
+      {"feature": "sodium_min",   "value": 0.749, "unit": "mEq/L"},
+      {"feature": "bun_last",     "value": 0.312, "unit": "mg/dL"}
     ]
   }
 }
 ```
+
+- `probability`: 사망 확률 (0~1)
+- `prediction`: 최종 분류 결과 (1=사망 고위험, 0=저위험)
+- `threshold`: 분류 기준값 (0.21, F1 최적화 기준)
+- `shap`: 정적 피처 63개의 SHAP 기여값
+  - `feature`: 피처명
+  - `value`: SHAP 값 (양수=사망 위험 증가, 음수=감소)
+  - `unit`: 피처 단위
 
 - `probability`: 사망 확률 (0~1)
 - `shap`: 정적 피처 63개의 SHAP 기여값 (양수=사망 위험 증가, 음수=감소)
