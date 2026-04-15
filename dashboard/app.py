@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 from datetime import datetime
 
 import plotly.graph_objects as go
@@ -1378,7 +1379,7 @@ def render_sidebar_and_controls(
         (function() {
             const pageWin = window.parent;
             const pageDoc = pageWin.document;
-            const PER_PAGE = 4;
+            const PER_PAGE = 10;
 
             function waitFor(selector, cb, tries) {
                 tries = tries == null ? 50 : tries;
@@ -1548,7 +1549,7 @@ def render_sidebar_and_controls(
 
                 function renderPager(totalPages) {
                     pagerEl.innerHTML = '';
-                    if (totalPages <= 1) return;
+                    // 1페이지뿐이어도 페이지네이션은 항상 표시 (사용자 요청)
 
                     const prev = pageDoc.createElement('button');
                     prev.className = 'cs-page-btn';
@@ -1736,6 +1737,9 @@ def main() -> None:
         predictions = cache.get(selected_pid)
         print(f"[DEBUG] predictions fetched for {selected_pid}: "
               f"keys={list(predictions.keys()) if predictions else None}")
+        print("[RESPONSE]", json.dumps(
+            predictions, indent=2, ensure_ascii=False, default=str
+        ))
 
     dashboard_data = fetch_dashboard_data(
         use_mock_override=bool(st.session_state["use_mock_data"]),
