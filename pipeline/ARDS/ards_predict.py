@@ -143,18 +143,31 @@ def predict_ards(vital_df, lab_df, patient_meta):
         key=lambda d: abs(d["shap_value"]),
         reverse=True,
     )[:3]
+    def _last_val_ards(df, col):
+        if col not in df.columns:
+            return None
+        s = df[col].dropna()
+        return round(float(s.iloc[-1]), 4) if len(s) > 0 else None
+
     clinical_indicators = {
-        feat: {
-            'value': next((f['raw_value'] for f in feature_values if f['feature'] == feat), None),
-            'reference': {
-                **ARDS_CLINICAL_REFERENCE[feat],
-                'risk_value': _calc_risk_value(
-                    feat,
-                    next((f['raw_value'] for f in feature_values if f['feature'] == feat), None)
-                ),
-            }
-        }
-        for feat in ARDS_CLINICAL_REFERENCE
+        'po2':       {
+            'value': _last_val_ards(lab_df, 'po2'),
+            'reference': {**ARDS_CLINICAL_REFERENCE['po2'],
+                          'risk_value': _calc_risk_value('po2', _last_val_ards(lab_df, 'po2'))}
+        },
+        'fio2_bg':   {
+            'value': _last_val_ards(lab_df, 'fio2_bg'),
+            'reference': {**ARDS_CLINICAL_REFERENCE['fio2_bg'], 'risk_value': None}
+        },
+        'pao2fio2ratio':  {
+            'value': _last_val_ards(lab_df, 'pao2fio2ratio'),
+            'reference': {**ARDS_CLINICAL_REFERENCE['pao2fio2ratio'],
+                          'risk_value': _calc_risk_value('pao2fio2ratio', _last_val_ards(lab_df, 'pao2fio2ratio'))}
+        },
+        'peep_feat': {
+            'value': _last_val_ards(lab_df, 'peep_feat'),
+            'reference': {**ARDS_CLINICAL_REFERENCE['peep_feat'], 'risk_value': None}
+        },
     }
     # data_quality: mortality 구조와 동일
     n_vital_slots      = int(len(vital_df))
