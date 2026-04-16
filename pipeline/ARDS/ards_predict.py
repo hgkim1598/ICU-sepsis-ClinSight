@@ -53,9 +53,9 @@ def _calc_risk_value(feat, value):
     if value is None:
         return None
     if feat == 'po2':
-        return not (75 <= value <= 100)
+        return  (75 <= value <= 100)
     if feat == 'pao2fio2ratio':
-        return not (value >= 300)
+        return  (value >= 300)
     return None
 
 
