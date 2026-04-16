@@ -9,7 +9,7 @@ from mortality.predict import predict_mortality
 from ARDS.ards_predict import predict_ards
 from SIC.sic_predict import predict_sic
 from mortality.predict import predict_mortality
-# from AKI.aki_predict import predict_aki
+from AKI.aki_predict import predict_aki
 
 
 

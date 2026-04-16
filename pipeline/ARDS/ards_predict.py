@@ -33,7 +33,21 @@ from ards_config import ARTIFACT_FILENAME, FEAT_COLS, WINDOW_H
 from ards_loader import _get_artifact
 from ards_preprocess import preprocess
 
+ARDS_CLINICAL_REFERENCE = {
+    'po2':       {'unit': 'mmHg',     'usual_range': '75–100',  'risk_value': None},
+    'fio2_bg':   {'unit': 'fraction', 'usual_range': '0.21–1.0', 'risk_value': None},
+    'pf_ratio':  {'unit': 'mmHg',     'usual_range': '>300',    'risk_value': None},
+    'peep_feat': {'unit': 'cmH₂O',   'usual_range': '5–15',    'risk_value': None},
+}
 
+def _calc_risk_value(feat, value):
+    if value is None:
+        return None
+    if feat == 'po2':
+        return 75 <= value <= 100
+    if feat == 'pf_ratio':
+        return value >= 300
+    return None
 # ── 메인 추론 함수 ────────────────────────────────────────────
 def predict_ards(vital_df, lab_df, patient_meta):
     """
@@ -118,26 +132,34 @@ def predict_ards(vital_df, lab_df, patient_meta):
         key=lambda d: abs(d["shap_value"]),
         reverse=True,
     )[:3]
-
+    clinical_indicators = {}
+    for feat, ref in ARDS_CLINICAL_REFERENCE.items():
+        val = next((f['raw_value'] for f in feature_values if f['feature'] == feat), None)
+        clinical_indicators[feat] = {
+            **ref,
+            'value':      val,
+            'risk_value': _calc_risk_value(feat, val),
+        }
     # data_quality: mortality 구조와 동일
     n_vital_slots      = int(len(vital_df))
     n_lab_measurements = int(len(lab_df))
 
     return {
-        "ards": {
-            "probability":    round(prob, 4),
-            "prediction":     int(prob >= threshold),
-            "threshold":      threshold,
-            "inference_time": datetime.now(timezone.utc).isoformat(),
-            "data_quality": {
-                "n_vital_slots":      n_vital_slots,
-                "n_lab_measurements": n_lab_measurements,
-                "is_reliable":        n_vital_slots >= 6,
-            },
-            "feature_values": feature_values,
-            "top_features":   top_features,
-        }
+    "ards": {
+        "probability":         round(prob, 4),
+        "prediction":          int(prob >= threshold),
+        "threshold":           threshold,
+        "inference_time":      datetime.now(timezone.utc).isoformat(),
+        "clinical_indicators": clinical_indicators,
+        "data_quality": {
+            "n_vital_slots":      n_vital_slots,
+            "n_lab_measurements": n_lab_measurements,
+            "is_reliable":        n_vital_slots >= 6,
+        },
+        "feature_values": feature_values,
+        "top_features":   top_features,
     }
+}
 
 
 # ── 모델 파일 생성 도우미 ──────────────────────────────────────
