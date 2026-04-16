@@ -1,4 +1,18 @@
+# Frontend (Streamlit)
 streamlit
 requests
 plotly
 python-dotenv
+
+# Backend (FastAPI)
+fastapi
+uvicorn
+boto3
+pandas
+pyarrow
+numpy
+scipy
+torch
+xgboost
+shap
+joblib
