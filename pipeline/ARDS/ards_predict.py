@@ -36,7 +36,7 @@ from ards_preprocess import preprocess
 ARDS_CLINICAL_REFERENCE = {
     'po2':       {'unit': 'mmHg',     'usual_range': '75–100',  'risk_value': None},
     'fio2_bg':   {'unit': 'fraction', 'usual_range': '0.21–1.0', 'risk_value': None},
-    'pf_ratio':  {'unit': 'mmHg',     'usual_range': '>300',    'risk_value': None},
+    'pao2fio2ratio': {'unit': 'mmHg', 'usual_range': '>300',    'risk_value': None},
     'peep_feat': {'unit': 'cmH₂O',   'usual_range': '5–15',    'risk_value': None},
 }
 
@@ -54,7 +54,7 @@ def _calc_risk_value(feat, value):
         return None
     if feat == 'po2':
         return not (75 <= value <= 100)
-    if feat == 'pf_ratio':
+    if feat == 'pao2fio2ratio':
         return not (value >= 300)
     return None
 
