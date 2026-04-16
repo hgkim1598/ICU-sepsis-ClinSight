@@ -13,6 +13,8 @@ from AKI.aki_predict import predict_aki
 
 
 
+
+
 app = FastAPI(
     title="Sepsis ICU Mortality Prediction API",
     description="패혈증 ICU 환자 사망률 예측 파이프라인",
