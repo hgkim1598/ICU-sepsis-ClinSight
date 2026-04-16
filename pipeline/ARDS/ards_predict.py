@@ -143,15 +143,19 @@ def predict_ards(vital_df, lab_df, patient_meta):
         key=lambda d: abs(d["shap_value"]),
         reverse=True,
     )[:3]
-    clinical_indicators = {}
-    for feat, ref in ARDS_CLINICAL_REFERENCE.items():
-        src = vital_df if feat == 'peep_feat' else lab_df
-        val = _last_val(src, feat)
-        risk = _calc_risk_value(feat, val)
-        clinical_indicators[feat] = {
-            'value':     val,
-            'reference': {**ref, 'risk_value': risk},
+    clinical_indicators = {
+        feat: {
+            'value': next((f['raw_value'] for f in feature_values if f['feature'] == feat), None),
+            'reference': {
+                **ARDS_CLINICAL_REFERENCE[feat],
+                'risk_value': _calc_risk_value(
+                    feat,
+                    next((f['raw_value'] for f in feature_values if f['feature'] == feat), None)
+                ),
+            }
         }
+        for feat in ARDS_CLINICAL_REFERENCE
+    }
     # data_quality: mortality 구조와 동일
     n_vital_slots      = int(len(vital_df))
     n_lab_measurements = int(len(lab_df))
