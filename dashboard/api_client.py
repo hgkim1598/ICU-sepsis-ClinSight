@@ -96,11 +96,27 @@ MODEL_KR_NAME = {
 # API 응답 clinical_indicators의 하위 키(예: "ventilation") → UI 표시 한글.
 # 매핑에 없으면 영문 키 그대로 노출(fallback).
 CLINICAL_INDICATOR_LABELS: Dict[str, str] = {
+    # Mortality
     "ventilation":    "기계환기",
     "norepinephrine": "노르에피네프린",
     "dopamine":       "도파민",
     "dobutamine":     "도부타민",
     "epinephrine":    "에피네프린",
+    # ARDS
+    "po2":            "동맥혈 산소분압",
+    "fio2_bg":        "흡입 산소 농도",
+    "pao2fio2ratio":  "P/F ratio",
+    "peep_feat":      "호기말 양압 (PEEP)",
+    # SIC
+    "platelet":       "혈소판",
+    "inr":            "INR (프로트롬빈)",
+    # AKI
+    "lactate":        "젖산",
+    "spo2":           "산소포화도",
+    "gcs":            "의식수준 (GCS)",
+    "sbp":            "수축기혈압",
+    "wbc":            "백혈구",
+    "hemoglobin":     "헤모글로빈",
 }
 
 
@@ -139,7 +155,7 @@ def _normalize_clinical_indicators(raw: Any) -> List[Dict[str, Any]]:
 
 MOCK_DASHBOARD_DATA: Dict[str, Any] = {
     "patient": {
-        "name": "Kim Minseo",
+        "name": "환자 A",
         "patient_id": "ICU-2026-0410",
         "age": 68,
         "gender": "Female",

@@ -11,7 +11,7 @@ ARDS 조기예측 추론 모듈
 변경 이력
 ---------
 v2 (2025-06):
-  - 인터페이스를 mortality predict.py와 통일 (vital_df + lab_df 2개로 통합)
+  - 인터페이스를 mortality predict.py와 통일 (vital_ts + lab_df 2개로 통합)
     → bg 컬럼(lactate, ph, bicarbonate)은 lab_df 안에서 자동 분리
   - patient_meta 키 호환: gender / gender_bin 모두 수용
   - patient_meta 키 호환: onset_time / sepsis_onset_time 모두 수용
@@ -33,18 +33,43 @@ from ards_config import ARTIFACT_FILENAME, FEAT_COLS, WINDOW_H
 from ards_loader import _get_artifact
 from ards_preprocess import preprocess
 
+ARDS_CLINICAL_REFERENCE = {
+    'po2':       {'unit': 'mmHg',     'usual_range': '75–100',  'risk_value': None},
+    'fio2_bg':   {'unit': 'fraction', 'usual_range': '0.21–1.0', 'risk_value': None},
+    'pao2fio2ratio': {'unit': 'mmHg', 'usual_range': '>300',    'risk_value': None},
+    'peep_feat': {'unit': 'cmH₂O',   'usual_range': '5–15',    'risk_value': None},
+}
+
+def _last_val(df, col):
+    """DataFrame 컬럼의 마지막 non-null 값. 없으면 None. (mortality _last_val과 동일)"""
+    if col not in df.columns:
+        return None
+    s = df[col].dropna()
+    return round(float(s.iloc[-1]), 4) if len(s) > 0 else None
+
+
+def _calc_risk_value(feat, value):
+    """True = 위험(범위 밖), False = 정상(범위 안), None = 판단 불가."""
+    if value is None:
+        return None
+    if feat == 'po2':
+        return not (75 <= value <= 100)
+    if feat == 'pao2fio2ratio':
+        return not (value >= 300)
+    return None
+
 
 # ── 메인 추론 함수 ────────────────────────────────────────────
-def predict_ards(vital_df, lab_df, patient_meta):
+def predict_ards(vital_ts, lab_df, patient_meta):
     """
     패혈증 환자의 48시간 내 ARDS 발생 확률 예측
 
-    인터페이스는 mortality predict.py와 동일: (vital_df, lab_df, patient_meta)
+    인터페이스는 mortality predict.py와 동일: (vital_ts, lab_df, patient_meta)
     lab_df 안에 bg 컬럼(lactate, ph, bicarbonate)이 포함되어 있으면 자동 분리.
 
     Parameters
     ----------
-    vital_df : pd.DataFrame
+    vital_ts : pd.DataFrame
         컬럼: charttime, spo2, resp_rate, heart_rate, mbp, sbp, temperature
     lab_df : pd.DataFrame
         컬럼: charttime, creatinine, bun, wbc, platelet
@@ -85,7 +110,7 @@ def predict_ards(vital_df, lab_df, patient_meta):
     features   = artifact['features']
 
     # 전처리
-    x = preprocess(vital_df, lab_df, patient_meta)
+    x = preprocess(vital_ts, lab_df, patient_meta)
 
     # Calibrated 확률 산출
     prob = float(calibrator.predict_proba(x)[0, 1])
@@ -118,26 +143,52 @@ def predict_ards(vital_df, lab_df, patient_meta):
         key=lambda d: abs(d["shap_value"]),
         reverse=True,
     )[:3]
+    def _last_val_ards(df, col):
+        if col not in df.columns:
+            return None
+        s = df[col].dropna()
+        return round(float(s.iloc[-1]), 4) if len(s) > 0 else None
 
+    clinical_indicators = {
+        'po2':       {
+            'value': _last_val_ards(lab_df, 'po2'),
+            'reference': {**ARDS_CLINICAL_REFERENCE['po2'],
+                          'risk_value': _calc_risk_value('po2', _last_val_ards(lab_df, 'po2'))}
+        },
+        'fio2_bg':   {
+            'value': _last_val_ards(lab_df, 'fio2_bg'),
+            'reference': {**ARDS_CLINICAL_REFERENCE['fio2_bg'], 'risk_value': None}
+        },
+        'pao2fio2ratio':  {
+            'value': _last_val_ards(vital_ts, 'pao2fio2ratio'),
+            'reference': {**ARDS_CLINICAL_REFERENCE['pao2fio2ratio'],
+                          'risk_value': _calc_risk_value('pao2fio2ratio', _last_val_ards(lab_df, 'pao2fio2ratio'))}
+        },
+        'peep_feat': {
+            'value': _last_val_ards(lab_df, 'peep_feat'),
+            'reference': {**ARDS_CLINICAL_REFERENCE['peep_feat'], 'risk_value': None}
+        },
+    }
     # data_quality: mortality 구조와 동일
-    n_vital_slots      = int(len(vital_df))
+    n_vital_slots      = int(len(vital_ts))
     n_lab_measurements = int(len(lab_df))
 
     return {
-        "ards": {
-            "probability":    round(prob, 4),
-            "prediction":     int(prob >= threshold),
-            "threshold":      threshold,
-            "inference_time": datetime.now(timezone.utc).isoformat(),
-            "data_quality": {
-                "n_vital_slots":      n_vital_slots,
-                "n_lab_measurements": n_lab_measurements,
-                "is_reliable":        n_vital_slots >= 6,
-            },
-            "feature_values": feature_values,
-            "top_features":   top_features,
-        }
+    "ards": {
+        "probability":         round(prob, 4),
+        "prediction":          int(prob >= threshold),
+        "threshold":           threshold,
+        "inference_time":      datetime.now(timezone.utc).isoformat(),
+        "clinical_indicators": clinical_indicators,
+        "data_quality": {
+            "n_vital_slots":      n_vital_slots,
+            "n_lab_measurements": n_lab_measurements,
+            "is_reliable":        n_vital_slots >= 6,
+        },
+        "feature_values": feature_values,
+        "top_features":   top_features,
     }
+}
 
 
 # ── 모델 파일 생성 도우미 ──────────────────────────────────────

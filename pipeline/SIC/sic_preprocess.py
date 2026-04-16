@@ -15,7 +15,7 @@ def _calc_pf_ratio(df):
 
 
 def _calc_derived(ts):
-    BASE_COLS = ['map', 'aptt', 'lactate', 'creatinine', 'bilirubin_total', 'wbc', 'rdw', 'pf_ratio']
+    BASE_COLS = ['map', 'aptt', 'lactate', 'creatinine', 'bilirubin_total', 'wbc', 'rdw', 'pao2fio2ratio']
     for col in BASE_COLS:
         if col not in ts.columns:
             ts[col] = 0.0
@@ -31,7 +31,7 @@ def _calc_derived(ts):
     ts['wbc_max']             = ts['wbc'].expanding().max() if 'wbc' in ts.columns else 0.0
     ts['wbc_min']             = ts['wbc'].expanding().min() if 'wbc' in ts.columns else 0.0
     ts['rdw_mean']            = ts['rdw'].expanding().mean() if 'rdw' in ts.columns else 0.0
-    ts['pf_ratio_min']        = ts['pf_ratio'].expanding().min() if 'pf_ratio' in ts.columns else 0.0
+    ts['pf_ratio_min']        = ts['pao2fio2ratio'].expanding().min() if 'pao2fio2ratio' in ts.columns else 0.0
     return ts
 
 
@@ -65,7 +65,7 @@ def preprocess_timeseries(vital_ts, lab_df, patient_meta):
     ts = ts.merge(lab_agg, on='slot', how='left')
 
     # pf_ratio
-    ts['pf_ratio'] = _calc_pf_ratio(ts)
+    ts['pao2fio2ratio'] = _calc_pf_ratio(ts)
 
     # ffill
     for col, limit in FFILL_LIMITS.items():

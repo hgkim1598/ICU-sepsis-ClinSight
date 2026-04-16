@@ -10,6 +10,11 @@ from sic_config import THRESHOLD, STATIC_COLS
 from sic_loader import get_models
 from sic_preprocess import preprocess_timeseries, preprocess_static
 
+def _last_val(df, col):
+    if col not in df.columns:
+        return None
+    s = df[col].dropna()
+    return round(float(s.iloc[-1]), 4) if len(s) > 0 else None
 
 def _safe_float(val):
     if val is None:
@@ -18,6 +23,20 @@ def _safe_float(val):
     if np.isnan(f) or np.isinf(f):
         return None
     return round(f, 4)
+
+def _calc_sic_risk_value(feat, value):
+    if value is None:
+        return None
+    if feat == 'platelet':
+        return 150 <= value <= 450  # K/uL 단위
+    if feat == 'inr':
+        return 0.8 <= value <= 1.3
+    return None
+
+SIC_CLINICAL_REFERENCE = {
+    'platelet': {'unit': 'K/uL',  'usual_range': '150–450', 'risk_value': None},
+    'inr':      {'unit': '',      'usual_range': '0.8–1.3', 'risk_value': None},
+}
 
 
 def predict_sic(vital_ts, lab_df, patient_meta):
@@ -51,11 +70,26 @@ def predict_sic(vital_ts, lab_df, patient_meta):
 
     top_features = shap_list[:3]
 
+    clinical_indicators = {
+        feat: {
+            'value': _last_val(lab_df, feat),
+            'reference': {
+                **SIC_CLINICAL_REFERENCE[feat],
+                'risk_value': _calc_sic_risk_value(
+                    feat,
+                    _last_val(lab_df, feat)
+                ),
+            }
+        }
+        for feat in SIC_CLINICAL_REFERENCE
+    }
+
     return {
         'sic': {
             'probability':    round(prob_final, 4),
             'prediction':     int(prob_final >= THRESHOLD),
             'threshold':      THRESHOLD,
+            'clinical_indicators': clinical_indicators,
             'inference_time': datetime.now(timezone.utc).isoformat(),
             'data_quality': {
                 'n_slots':   n_slots,
