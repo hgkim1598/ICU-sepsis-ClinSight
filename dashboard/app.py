@@ -1154,9 +1154,16 @@ def render_patient_bar(data: dict) -> None:
     p = data.get("patient", {})
     meta = p.get("patient_meta", {}) or {}
 
-    # 하드코딩(회색): 환자명, SOFA 점수 — API에 없어서 mock 값 유지
+    # 하드코딩(회색): 환자명 — API에 없어서 mock 값 유지
     name = html.escape(str(p.get("name", "-")))
-    sofa_str = html.escape(str(p.get("sofa_score", "-")))
+    # SOFA 점수: patient_meta에 있으면 API 값(검은색), 없으면 mock(회색)
+    sofa_api = meta.get("sofa_score")
+    if sofa_api not in (None, "", "None"):
+        sofa_str = html.escape(str(sofa_api))
+        sofa_is_api = True
+    else:
+        sofa_str = html.escape(str(p.get("sofa_score", "-")))
+        sofa_is_api = False
 
     # API(검은색): 나이, 성별, ICU 입실, 패혈증 onset — patient_meta에서 매핑
     age_raw = meta.get("age")
@@ -1197,7 +1204,7 @@ def render_patient_bar(data: dict) -> None:
           <div class="pb-divider"></div>
           <div class="pb-item">
             <span class="pb-label">SOFA 점수</span>
-            <span class="pb-value" style="{hc_style}">{sofa_str}</span>
+            <span class="pb-value" style="{api_style if sofa_is_api else hc_style}">{sofa_str}</span>
           </div>
           <div class="pb-divider"></div>
           <div class="pb-item">
