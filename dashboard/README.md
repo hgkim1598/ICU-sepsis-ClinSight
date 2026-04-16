@@ -43,14 +43,16 @@ source .venv/Scripts/activate    # Windows (Git Bash)
 uvicorn pipeline.api:app --reload --port 8000
 
 # KMP_DUPLICATE_LIB_OK: torch + xgboost 동시 로드 시 OpenMP 라이브러리 충돌 방지
-# Mac / Linux / Windows Git Bash — 전부 동일
-KMP_DUPLICATE_LIB_OK=TRUE uvicorn pipeline.api:app --reload --host 127.0.0.1 --port 8000
+# 프로젝트 루트(ICU-sepsis-ClinSight/)에서 실행
+
+# Mac / Linux / Windows Git Bash
+PYTHONPATH=./pipeline KMP_DUPLICATE_LIB_OK=TRUE uvicorn pipeline.api:app --reload --host 127.0.0.1 --port 8000
 
 # Windows PowerShell
-$env:KMP_DUPLICATE_LIB_OK="TRUE"; uvicorn pipeline.api:app --reload --host 127.0.0.1 --port 8000
+$env:PYTHONPATH="./pipeline"; $env:KMP_DUPLICATE_LIB_OK="TRUE"; uvicorn pipeline.api:app --reload --host 127.0.0.1 --port 8000
 
 # Windows CMD
-set KMP_DUPLICATE_LIB_OK=TRUE && uvicorn pipeline.api:app --reload --host 127.0.0.1 --port 8000
+set PYTHONPATH=./pipeline && set KMP_DUPLICATE_LIB_OK=TRUE && uvicorn pipeline.api:app --reload --host 127.0.0.1 --port 8000
 ```
 
 정상 실행되면 아래와 같은 로그가 나온다:
