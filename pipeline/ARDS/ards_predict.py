@@ -53,9 +53,9 @@ def _calc_risk_value(feat, value):
     if value is None:
         return None
     if feat == 'po2':
-        return not (75 <= value <= 100)
+        return  (75 <= value <= 100)
     if feat == 'pao2fio2ratio':
-        return not (value >= 300)
+        return  (value >= 300)
     return None
 
 
@@ -162,7 +162,7 @@ def predict_ards(vital_ts, lab_df, patient_meta):
         'pao2fio2ratio':  {
             'value': _last_val_ards(vital_ts, 'pao2fio2ratio'),
             'reference': {**ARDS_CLINICAL_REFERENCE['pao2fio2ratio'],
-                          'risk_value': _calc_risk_value('pao2fio2ratio', _last_val_ards(lab_df, 'pao2fio2ratio'))}
+                          'risk_value': _calc_risk_value('pao2fio2ratio', _last_val_ards(vital_ts, 'pao2fio2ratio'))}
         },
         'peep_feat': {
             'value': _last_val_ards(lab_df, 'peep_feat'),

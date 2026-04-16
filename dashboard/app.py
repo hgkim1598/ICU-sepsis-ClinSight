@@ -1031,9 +1031,9 @@ def _clinical_indicators_table_html(indicators: list) -> str:
 
         risk = ind.get("risk_value")
         if risk is True:
-            val_color = color_risk
-        elif risk is False:
             val_color = color_safe
+        elif risk is False:
+            val_color = color_risk
         else:
             val_color = color_default
 
