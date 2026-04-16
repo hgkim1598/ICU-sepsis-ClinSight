@@ -1902,16 +1902,19 @@ def main() -> None:
     # 신규 추가: 좌측 슬라이드 사이드바 (overlay) + 새로고침 버튼 wiring
     render_sidebar_and_controls(dashboard_data, patient_ids, selected_pid)
 
-    # ── Debug: API 응답 전체 보기 (접혀있음) ──
-    with st.expander("🔍 Debug: API Response", expanded=False):
-        st.write(f"**selected_pid:** `{selected_pid}`")
-        st.markdown("**predictions:**")
-        st.json(predictions if predictions else {"_": "no predictions"})
-        st.markdown("**patient_meta:**")
-        st.json(
-            dashboard_data.get("patient", {}).get("patient_meta", {})
-            or {"_": "no patient_meta"}
-        )
+    # ── Debug: API 응답 전체 보기 ──
+    # 표시하려면 SHOW_DEBUG = True 로 변경
+    SHOW_DEBUG = False
+    if SHOW_DEBUG:
+        with st.expander("🔍 Debug: API Response", expanded=False):
+            st.write(f"**selected_pid:** `{selected_pid}`")
+            st.markdown("**predictions:**")
+            st.json(predictions if predictions else {"_": "no predictions"})
+            st.markdown("**patient_meta:**")
+            st.json(
+                dashboard_data.get("patient", {}).get("patient_meta", {})
+                or {"_": "no patient_meta"}
+            )
 
 
 if __name__ == "__main__":
