@@ -11,7 +11,7 @@ ARDS 조기예측 추론 모듈
 변경 이력
 ---------
 v2 (2025-06):
-  - 인터페이스를 mortality predict.py와 통일 (vital_df + lab_df 2개로 통합)
+  - 인터페이스를 mortality predict.py와 통일 (vital_ts + lab_df 2개로 통합)
     → bg 컬럼(lactate, ph, bicarbonate)은 lab_df 안에서 자동 분리
   - patient_meta 키 호환: gender / gender_bin 모두 수용
   - patient_meta 키 호환: onset_time / sepsis_onset_time 모두 수용
@@ -60,16 +60,16 @@ def _calc_risk_value(feat, value):
 
 
 # ── 메인 추론 함수 ────────────────────────────────────────────
-def predict_ards(vital_df, lab_df, patient_meta):
+def predict_ards(vital_ts, lab_df, patient_meta):
     """
     패혈증 환자의 48시간 내 ARDS 발생 확률 예측
 
-    인터페이스는 mortality predict.py와 동일: (vital_df, lab_df, patient_meta)
+    인터페이스는 mortality predict.py와 동일: (vital_ts, lab_df, patient_meta)
     lab_df 안에 bg 컬럼(lactate, ph, bicarbonate)이 포함되어 있으면 자동 분리.
 
     Parameters
     ----------
-    vital_df : pd.DataFrame
+    vital_ts : pd.DataFrame
         컬럼: charttime, spo2, resp_rate, heart_rate, mbp, sbp, temperature
     lab_df : pd.DataFrame
         컬럼: charttime, creatinine, bun, wbc, platelet
@@ -110,7 +110,7 @@ def predict_ards(vital_df, lab_df, patient_meta):
     features   = artifact['features']
 
     # 전처리
-    x = preprocess(vital_df, lab_df, patient_meta)
+    x = preprocess(vital_ts, lab_df, patient_meta)
 
     # Calibrated 확률 산출
     prob = float(calibrator.predict_proba(x)[0, 1])
@@ -160,7 +160,7 @@ def predict_ards(vital_df, lab_df, patient_meta):
             'reference': {**ARDS_CLINICAL_REFERENCE['fio2_bg'], 'risk_value': None}
         },
         'pao2fio2ratio':  {
-            'value': _last_val_ards(lab_df, 'pao2fio2ratio'),
+            'value': _last_val_ards(vital_ts, 'pao2fio2ratio'),
             'reference': {**ARDS_CLINICAL_REFERENCE['pao2fio2ratio'],
                           'risk_value': _calc_risk_value('pao2fio2ratio', _last_val_ards(lab_df, 'pao2fio2ratio'))}
         },
@@ -170,7 +170,7 @@ def predict_ards(vital_df, lab_df, patient_meta):
         },
     }
     # data_quality: mortality 구조와 동일
-    n_vital_slots      = int(len(vital_df))
+    n_vital_slots      = int(len(vital_ts))
     n_lab_measurements = int(len(lab_df))
 
     return {
