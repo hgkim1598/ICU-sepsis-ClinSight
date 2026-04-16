@@ -6,10 +6,10 @@ from io import BytesIO
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from mortality.predict import predict_mortality
-from ards.ards_predict import predict_ards
-from sic.sic_predict import predict_sic
+from ARDS.ards_predict import predict_ards
+from SIC.sic_predict import predict_sic
 from mortality.predict import predict_mortality
-from aki.aki_predict import predict_aki
+from AKI.aki_predict import predict_aki
 
 
 
