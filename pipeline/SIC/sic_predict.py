@@ -70,14 +70,19 @@ def predict_sic(vital_ts, lab_df, patient_meta):
 
     top_features = shap_list[:3]
 
-    clinical_indicators = {}
-    for feat, ref in SIC_CLINICAL_REFERENCE.items():
-        val = _last_val(lab_df, feat) if 'lab_df' in dir() else None
-        clinical_indicators[feat] = {
-            **ref,
-            'value':      val,
-            'risk_value': _calc_sic_risk_value(feat, val),
+    clinical_indicators = {
+        feat: {
+            'value': _last_val(lab_df, feat),
+            'reference': {
+                **SIC_CLINICAL_REFERENCE[feat],
+                'risk_value': _calc_sic_risk_value(
+                    feat,
+                    _last_val(lab_df, feat)
+                ),
+            }
         }
+        for feat in SIC_CLINICAL_REFERENCE
+    }
 
     return {
         'sic': {
