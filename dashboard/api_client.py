@@ -155,7 +155,7 @@ def _normalize_clinical_indicators(raw: Any) -> List[Dict[str, Any]]:
 
 MOCK_DASHBOARD_DATA: Dict[str, Any] = {
     "patient": {
-        "name": "Kim Minseo",
+        "name": "환자 A",
         "patient_id": "ICU-2026-0410",
         "age": 68,
         "gender": "Female",

@@ -88,6 +88,18 @@ def inject_styles() -> None:
         #MainMenu {{ visibility: hidden; }}
         footer {{ visibility: hidden; }}
 
+        /* ── CSS custom properties (light / dark) ── */
+        :root {{
+            --c-primary:   {T_PRIMARY};
+            --c-secondary: {T_SECONDARY};
+            --c-muted:     {T_MUTED};
+        }}
+        body.cs-dark {{
+            --c-primary:   #f1f5f9;
+            --c-secondary: #cbd5e1;
+            --c-muted:     #94a3b8;
+        }}
+
         /* ── Global ── */
         .stApp {{
             background: {APP_BG};
@@ -943,7 +955,7 @@ def _shap_bars_html(top_features: list, is_api: bool = True) -> str:
     is_api=False면 전체 회색 톤.
     """
     if not top_features:
-        return f'<div class="desc-text" style="color:{T_MUTED};">기여 요인 정보가 없습니다.</div>'
+        return '<div class="desc-text" style="color:var(--c-muted);">기여 요인 정보가 없습니다.</div>'
 
     top3 = top_features[:3]
     vals = [float(x.get("shap_value", x.get("value", 0.0))) for x in top3]
@@ -960,7 +972,7 @@ def _shap_bars_html(top_features: list, is_api: bool = True) -> str:
 
         if is_api:
             bar_color = SHAP_POS if val >= 0 else SHAP_NEG
-            name_color = T_PRIMARY
+            name_color = "var(--c-primary)"
         else:
             bar_color = gray_bar
             name_color = gray
@@ -989,11 +1001,11 @@ def _clinical_indicators_table_html(indicators: list) -> str:
     if not indicators:
         return ""
 
-    color_risk = "#ef4444"   # SHAP_POS와 동일 — 위험/음성 톤
-    color_safe = "#22c55e"   # SHAP_NEG와 동일 — 안전/양성 톤
-    color_default = T_PRIMARY
-    name_color = T_PRIMARY
-    range_color = T_SECONDARY
+    color_risk = "#ef4444"
+    color_safe = "#22c55e"
+    color_default = "var(--c-primary)"
+    name_color = "var(--c-primary)"
+    range_color = "var(--c-secondary)"
 
     rows = ""
     for ind in indicators:
@@ -1176,8 +1188,8 @@ def render_patient_bar(data: dict) -> None:
     icu_admit_str = str(meta.get("intime") or "-")
     sepsis_onset_str = str(meta.get("sepsis_onset_time") or "-")
 
-    api_style = f"color:{T_PRIMARY};"
-    hc_style = f"color:{T_MUTED};"
+    api_style = "color:var(--c-primary);"
+    hc_style = "color:var(--c-muted);"
 
     st.markdown(
         f"""
@@ -1362,7 +1374,7 @@ def render_detail_panel(data: dict) -> None:
                 unsafe_allow_html=True,
             )
             desc = html.escape(str(model_result.get("description", "-")))
-            desc_color = T_MUTED if not is_api else T_SECONDARY
+            desc_color = "var(--c-muted)" if not is_api else "var(--c-secondary)"
             st.markdown(
                 f'<div class="desc-box"><div class="desc-text" '
                 f'style="color:{desc_color};">{desc}</div></div>',
