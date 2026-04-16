@@ -40,14 +40,25 @@ ARDS_CLINICAL_REFERENCE = {
     'peep_feat': {'unit': 'cmH₂O',   'usual_range': '5–15',    'risk_value': None},
 }
 
+def _last_val(df, col):
+    """DataFrame 컬럼의 마지막 non-null 값. 없으면 None. (mortality _last_val과 동일)"""
+    if col not in df.columns:
+        return None
+    s = df[col].dropna()
+    return round(float(s.iloc[-1]), 4) if len(s) > 0 else None
+
+
 def _calc_risk_value(feat, value):
+    """True = 위험(범위 밖), False = 정상(범위 안), None = 판단 불가."""
     if value is None:
         return None
     if feat == 'po2':
-        return 75 <= value <= 100
+        return not (75 <= value <= 100)
     if feat == 'pf_ratio':
-        return value >= 300
+        return not (value >= 300)
     return None
+
+
 # ── 메인 추론 함수 ────────────────────────────────────────────
 def predict_ards(vital_df, lab_df, patient_meta):
     """
@@ -134,11 +145,12 @@ def predict_ards(vital_df, lab_df, patient_meta):
     )[:3]
     clinical_indicators = {}
     for feat, ref in ARDS_CLINICAL_REFERENCE.items():
-        val = next((f['raw_value'] for f in feature_values if f['feature'] == feat), None)
+        src = vital_df if feat == 'peep_feat' else lab_df
+        val = _last_val(src, feat)
+        risk = _calc_risk_value(feat, val)
         clinical_indicators[feat] = {
-            **ref,
-            'value':      val,
-            'risk_value': _calc_risk_value(feat, val),
+            'value':     val,
+            'reference': {**ref, 'risk_value': risk},
         }
     # data_quality: mortality 구조와 동일
     n_vital_slots      = int(len(vital_df))
