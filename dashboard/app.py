@@ -977,6 +977,77 @@ def _shap_bars_html(top_features: list, is_api: bool = True) -> str:
     return rows
 
 
+def _clinical_indicators_table_html(indicators: list) -> str:
+    """
+    API clinical_indicators 렌더링 (지표 | 측정값+단위 | 정상범위).
+    측정값 색상은 reference.risk_value로 결정:
+      - True  → 빨강 (범위 밖 = 위험)
+      - False → 초록 (범위 안 = 정상)
+      - None  → 기본색 (판단 불가)
+    레이아웃/클래스는 기존 _feature_table_html과 동일.
+    """
+    if not indicators:
+        return ""
+
+    color_risk = "#ef4444"   # SHAP_POS와 동일 — 위험/음성 톤
+    color_safe = "#22c55e"   # SHAP_NEG와 동일 — 안전/양성 톤
+    color_default = T_PRIMARY
+    name_color = T_PRIMARY
+    range_color = T_SECONDARY
+
+    rows = ""
+    for ind in indicators:
+        raw = ind.get("value")
+        if raw is None:
+            val_str = "—"
+        elif isinstance(raw, bool):
+            val_str = "1" if raw else "0"
+        elif isinstance(raw, float):
+            if raw == int(raw):
+                val_str = str(int(raw))
+            else:
+                val_str = f"{raw:.4f}".rstrip("0").rstrip(".") or "0"
+        else:
+            val_str = str(raw)
+
+        unit = str(ind.get("unit") or "")
+        # "binary" 단위는 usual_range에서 의미가 이미 설명됨 → 숫자만 표시
+        if val_str != "—" and unit and unit.lower() != "binary":
+            display_val = f"{val_str} {unit}".strip()
+        else:
+            display_val = val_str
+
+        risk = ind.get("risk_value")
+        if risk is True:
+            val_color = color_risk
+        elif risk is False:
+            val_color = color_safe
+        else:
+            val_color = color_default
+
+        usual_range = str(ind.get("usual_range") or "").strip()
+        range_str = html.escape(usual_range) if usual_range else "—"
+
+        rows += (
+            f"<tr>"
+            f'<td class="fn-cell" style="color:{name_color};">'
+            f'{html.escape(str(ind.get("display_name", "-")))}</td>'
+            f'<td class="fv-cell" style="color:{val_color};">'
+            f'{html.escape(display_val)}</td>'
+            f'<td class="fr-cell" style="color:{range_color};">{range_str}</td>'
+            f"</tr>"
+        )
+
+    return (
+        '<table class="feat-table">'
+        "<thead><tr>"
+        "<th>지표</th><th>측정값</th><th>정상범위</th>"
+        "</tr></thead>"
+        f"<tbody>{rows}</tbody>"
+        "</table>"
+    )
+
+
 def _feature_table_html(top_feature_values: list) -> str:
     """
     핵심 지표 측정값 — 모델 학습에서 의도적으로 제외한 임상 지표.
@@ -1265,10 +1336,19 @@ def render_detail_panel(data: dict) -> None:
                 '<div class="card-section-label">핵심 지표 측정값</div>',
                 unsafe_allow_html=True,
             )
-            st.markdown(
-                _feature_table_html(top_feature_values),
-                unsafe_allow_html=True,
-            )
+            clinical_indicators = model_result.get("clinical_indicators") or []
+            if clinical_indicators:
+                # API clinical_indicators 활성 — risk_value 기반 색상
+                st.markdown(
+                    _clinical_indicators_table_html(clinical_indicators),
+                    unsafe_allow_html=True,
+                )
+            else:
+                # API 데이터 없음 → 기존 mock 테이블(회색) 유지
+                st.markdown(
+                    _feature_table_html(top_feature_values),
+                    unsafe_allow_html=True,
+                )
 
             st.markdown(
                 '<div class="card-section-label" style="margin-top:1.3rem;">임상 해석</div>',

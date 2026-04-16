@@ -89,8 +89,53 @@ MODEL_KR_NAME = {
     "Mortality": "사망 위험도",
     "ARDS": "급성호흡곤란 (ARDS)",
     "AKI": "급성신손상 (AKI)",
-    "SIC": "파종혈관내응고 (DIC)",
+    "SIC": "패혈증 유발 응고장애 (SIC)",
 }
+
+# ── 핵심 지표(clinical_indicators) 한글 매핑 ──────────────────
+# API 응답 clinical_indicators의 하위 키(예: "ventilation") → UI 표시 한글.
+# 매핑에 없으면 영문 키 그대로 노출(fallback).
+CLINICAL_INDICATOR_LABELS: Dict[str, str] = {
+    "ventilation":    "기계환기",
+    "norepinephrine": "노르에피네프린",
+    "dopamine":       "도파민",
+    "dobutamine":     "도부타민",
+    "epinephrine":    "에피네프린",
+}
+
+
+def get_clinical_indicator_label(name: str) -> str:
+    """CLINICAL_INDICATOR_LABELS에 매핑이 있으면 한글 라벨, 없으면 그대로."""
+    return CLINICAL_INDICATOR_LABELS.get(name, name)
+
+
+def _normalize_clinical_indicators(raw: Any) -> List[Dict[str, Any]]:
+    """
+    API clinical_indicators dict → UI 렌더링용 list.
+
+    입력: {"ventilation": {"value": 0, "reference": {"unit", "usual_range", "risk_value"}}, ...}
+    출력 항목: {"name", "display_name", "value", "unit", "usual_range", "risk_value"}
+           risk_value: True / False / None (그대로 전달 — 렌더러가 색 결정)
+    비어있거나 None이면 [] 반환.
+    """
+    if not isinstance(raw, dict) or not raw:
+        return []
+    result: List[Dict[str, Any]] = []
+    for key, payload in raw.items():
+        if not isinstance(payload, dict):
+            continue
+        ref = payload.get("reference") or {}
+        if not isinstance(ref, dict):
+            ref = {}
+        result.append({
+            "name":         str(key),
+            "display_name": get_clinical_indicator_label(str(key)),
+            "value":        payload.get("value"),
+            "unit":         str(ref.get("unit") or ""),
+            "usual_range":  str(ref.get("usual_range") or ""),
+            "risk_value":   ref.get("risk_value"),  # True/False/None 그대로
+        })
+    return result
 
 MOCK_DASHBOARD_DATA: Dict[str, Any] = {
     "patient": {
@@ -343,6 +388,7 @@ def enrich_model_result(
         "feature_values": feature_values_api_shape,
         "top_features_display": top_features_display,
         "top_feature_values": top_feature_values,
+        "clinical_indicators": [],  # mock 경로엔 API 데이터 없음 → 빈 리스트
         "description": model_result.get(
             "description",
             build_description(model_name, top_features_display),
@@ -383,6 +429,12 @@ def enrich_from_api(
         for item in mock_sorted_shap[:3]
     ]
 
+    # clinical_indicators: API에 있으면 파싱, 없으면 빈 리스트
+    # (빈 리스트면 렌더러가 기존 mock top_feature_values(회색)로 fallback)
+    clinical_indicators = _normalize_clinical_indicators(
+        api_model.get("clinical_indicators")
+    )
+
     return {
         "probability": probability,
         "threshold": api_model.get("threshold"),
@@ -398,6 +450,7 @@ def enrich_from_api(
         ],
         "top_features_display": top_features_display,
         "top_feature_values": mock_top_feature_values,
+        "clinical_indicators": clinical_indicators,
         "description": build_description(model_name, top_features_display),
         "has_api_data": True,
     }
