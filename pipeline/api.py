@@ -86,11 +86,11 @@ def predict(patient_id: str):
     mortality_result = predict_mortality(vital_ts, lab_df, meta, patient_id=patient_id)
     ards_result      = predict_ards(vital_ts, lab_df, meta)
     sic_result       = predict_sic(vital_ts, lab_df, meta)
-    # aki_result       = predict_aki(vital_ts, lab_df, meta)
+    aki_result       = predict_aki(vital_ts, lab_df, meta)
 
     return {
         **mortality_result,
         **ards_result,
         **sic_result,
-        # **aki_result,
+        **aki_result,
     }
